@@ -1,10 +1,196 @@
 # Faithful Clinical Summarization via Atomic Claim Verification
 
-This repository contains the implementation for our CSE 587 Deep Learning project at Penn State. We address the challenge of hallucinations in clinical NLP by introducing a two-stage pipeline that generates summaries and verifies them via atomic claim decomposition.
+This repository contains a lightweight end-to-end prototype for faithful clinical dialogue summarization. The workflow trains:
 
-## Overview
+- a summarizer that generates a note from a patient-clinician dialogue
+- a verifier that scores whether each atomic claim in the generated summary is supported by the source dialogue
 
-- **Task:** Abstractive Clinical Dialogue Summarization.
-- **Goal:** Minimize hallucinations (factual errors) in AI-generated medical notes.
-- **Models:** Llama-3-8B (Generator) + DeBERTa-v3-large (Verifier).
-- **Dataset:** MIMIC-III Clinical Database.
+The current implementation is designed for local experimentation with a synthetic dummy dataset, not for direct use on real clinical data.
+
+## Pipeline Overview
+
+1. Generate synthetic dialogue, summary, and claim-label examples.
+2. Convert the raw examples into:
+   - a summarization dataset
+   - a claim verification dataset
+3. Train a seq2seq summarizer.
+4. Train a binary verifier on dialogue-claim pairs.
+5. Run inference on one dialogue, split the generated summary into atomic claims, and score each claim with the verifier.
+
+## Repository Layout
+
+```text
+.
+├── README.md
+├── requirements.txt
+└── scripts
+    ├── create_dummy_dataset.py
+    ├── prepare_datasets.py
+    ├── run_pipeline.py
+    ├── train_summarizer.py
+    └── train_verifier.py
+```
+
+## Implemented Scripts
+
+### `scripts/create_dummy_dataset.py`
+
+Creates a synthetic clinical dataset in JSONL format. Each example contains:
+
+- `dialogue`
+- `summary`
+- `claims`
+- `metadata`
+
+Default output:
+
+```text
+data/dummy/raw/
+  train.jsonl
+  validation.jsonl
+  test.jsonl
+  manifest.json
+```
+
+Example:
+
+```bash
+python3 scripts/create_dummy_dataset.py --train-size 24 --val-size 6 --test-size 6
+```
+
+### `scripts/prepare_datasets.py`
+
+Transforms raw examples into task-specific splits:
+
+- `data/dummy/processed/summarization/*.jsonl`
+- `data/dummy/processed/verifier/*.jsonl`
+
+Example:
+
+```bash
+python3 scripts/prepare_datasets.py
+```
+
+### `scripts/train_summarizer.py`
+
+Trains a summarization baseline using Hugging Face Transformers.
+
+Default model:
+
+- `google/flan-t5-small`
+
+Default output:
+
+- `artifacts/summarizer`
+
+Example:
+
+```bash
+python3 scripts/train_summarizer.py --num-train-epochs 1
+```
+
+### `scripts/train_verifier.py`
+
+Trains a binary claim verifier on dialogue-claim pairs.
+
+Default model:
+
+- `distilbert-base-uncased`
+
+Default output:
+
+- `artifacts/verifier`
+
+Example:
+
+```bash
+python3 scripts/train_verifier.py --num-train-epochs 1
+```
+
+### `scripts/run_pipeline.py`
+
+Loads the trained summarizer and verifier, generates a summary for the first example in the input file, decomposes the summary into sentence-level claims, scores each claim, and writes a JSON report.
+
+Default output:
+
+- `artifacts/pipeline_report.json`
+
+Example:
+
+```bash
+python3 scripts/run_pipeline.py
+```
+
+## Quick Start
+
+### 1. Set up the environment
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Generate dummy data
+
+```bash
+python3 scripts/create_dummy_dataset.py
+```
+
+### 3. Prepare training splits
+
+```bash
+python3 scripts/prepare_datasets.py
+```
+
+### 4. Train the summarizer
+
+```bash
+python3 scripts/train_summarizer.py
+```
+
+### 5. Train the verifier
+
+```bash
+python3 scripts/train_verifier.py
+```
+
+### 6. Run the full pipeline
+
+```bash
+python3 scripts/run_pipeline.py
+```
+
+## Expected Outputs
+
+After a full run, the repository will typically contain:
+
+```text
+data/
+  dummy/
+    raw/
+      train.jsonl
+      validation.jsonl
+      test.jsonl
+      manifest.json
+    processed/
+      summarization/
+        train.jsonl
+        validation.jsonl
+        test.jsonl
+      verifier/
+        train.jsonl
+        validation.jsonl
+        test.jsonl
+
+artifacts/
+  summarizer/
+  verifier/
+  pipeline_report.json
+```
+
+## Notes
+
+- The dataset in this repository is synthetic and intended for development and demonstration.
+- The verifier currently operates on sentence-level claims produced by simple punctuation-based splitting.
+- Training defaults are small so the pipeline is runnable on a local machine, but model downloads still require internet access the first time you run them.
