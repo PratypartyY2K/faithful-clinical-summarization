@@ -24,6 +24,7 @@ from transformers import (
     TrainingArguments,
 )
 
+from src.config.cli import parse_args_with_optional_config
 from src.evaluation.pipeline_metrics import compute_text_overlap_metrics
 from src.modeling.pipeline import build_summary_prompt, generate_summaries_batch
 
@@ -51,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--generation-batch-size", type=int, default=4)
     parser.add_argument("--max-new-tokens", type=int, default=128)
-    args = parser.parse_args()
+    args = parse_args_with_optional_config(parser)
     if args.use_qlora and not args.use_peft:
         raise ValueError("--use-qlora requires --use-peft.")
     if args.use_qlora and not torch.cuda.is_available():

@@ -9,6 +9,8 @@ import random
 from pathlib import Path
 from typing import Dict, List
 
+from src.config.cli import parse_args_with_optional_config
+
 
 PATIENT_PROFILES: List[Dict[str, str]] = [
     {
@@ -156,7 +158,7 @@ def main() -> None:
     parser.add_argument("--test-size", type=int, default=6)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--label-schema", choices=("binary", "nli"), default="nli")
-    args = parser.parse_args()
+    args = parse_args_with_optional_config(parser)
 
     random.seed(args.seed)
     total_size = args.train_size + args.val_size + args.test_size

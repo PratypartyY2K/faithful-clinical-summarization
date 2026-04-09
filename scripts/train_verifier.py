@@ -19,6 +19,8 @@ from transformers import (
     TrainingArguments,
 )
 
+from src.config.cli import parse_args_with_optional_config
+
 
 DEFAULT_LABEL_MAP = {
     0: "contradiction",
@@ -57,7 +59,7 @@ def main() -> None:
     parser.add_argument("--per-device-train-batch-size", type=int, default=4)
     parser.add_argument("--per-device-eval-batch-size", type=int, default=8)
     parser.add_argument("--learning-rate", type=float, default=2e-5)
-    args = parser.parse_args()
+    args = parse_args_with_optional_config(parser)
 
     dataset = load_dataset(
         "json",

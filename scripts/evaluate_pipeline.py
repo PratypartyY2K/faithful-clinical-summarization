@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
+from src.config.cli import parse_args_with_optional_config
 from src.evaluation.pipeline_metrics import run_full_evaluation, write_evaluation_report
 from src.modeling.pipeline import load_summarizer, load_verifier
 
@@ -28,7 +29,7 @@ def main() -> None:
         type=Path,
         default=Path("artifacts/evaluation_report.json"),
     )
-    args = parser.parse_args()
+    args = parse_args_with_optional_config(parser)
 
     summarizer_tokenizer, summarizer_model = load_summarizer(args.summarizer_dir)
     verifier_tokenizer, verifier_model = load_verifier(args.verifier_dir)

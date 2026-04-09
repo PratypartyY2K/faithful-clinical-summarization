@@ -1,0 +1,14 @@
+{
+  "data_dir": "data/dummy/processed/summarization",
+  "model_name": "google/flan-t5-small",
+  "output_dir": "artifacts/summarizer/flan_t5_small",
+  "trainer_type": "seq2seq",
+  "max_source_length": 512,
+  "max_target_length": 128,
+  "num_train_epochs": 1,
+  "per_device_train_batch_size": 2,
+  "per_device_eval_batch_size": 2,
+  "learning_rate": 2e-05,
+  "generation_batch_size": 4,
+  "max_new_tokens": 128
+}

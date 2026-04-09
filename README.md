@@ -7,6 +7,41 @@ This repository contains a lightweight end-to-end prototype for faithful clinica
 
 The current implementation is designed for local experimentation with a synthetic dummy dataset, not for direct use on real clinical data.
 
+## Config-Driven Runs
+
+All main scripts support `--config <json-file>`. Presets are provided under `configs/`.
+
+Synthetic data setup:
+
+```bash
+python3 scripts/create_dummy_dataset.py --config configs/data/dummy_nli.json
+python3 scripts/prepare_datasets.py
+```
+
+`flan-t5-small` baseline:
+
+```bash
+python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_small.json
+```
+
+Llama-3-8B QLoRA run:
+
+```bash
+python3 scripts/train_summarizer.py --config configs/summarizer/llama3_8b_qlora.json
+```
+
+DeBERTa-v3-large verifier:
+
+```bash
+python3 scripts/train_verifier.py --config configs/verifier/deberta_v3_large.json
+```
+
+Full evaluation run:
+
+```bash
+python3 scripts/evaluate_pipeline.py --config configs/evaluation/full_pipeline.json
+```
+
 ## Pipeline Overview
 
 1. Generate synthetic dialogue, summary, and claim-label examples.
@@ -23,9 +58,15 @@ The current implementation is designed for local experimentation with a syntheti
 ```text
 .
 ├── README.md
+├── configs
+│   ├── data
+│   ├── evaluation
+│   ├── summarizer
+│   └── verifier
 ├── requirements.txt
 ├── src
 │   ├── evaluation
+│   ├── config
 │   ├── modeling
 │   └── preprocessing
 └── scripts

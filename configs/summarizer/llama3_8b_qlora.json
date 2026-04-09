@@ -1,0 +1,20 @@
+{
+  "data_dir": "data/dummy/processed/summarization",
+  "model_name": "meta-llama/Meta-Llama-3-8B-Instruct",
+  "output_dir": "artifacts/summarizer/llama3_8b_qlora",
+  "trainer_type": "causal",
+  "max_source_length": 1024,
+  "max_target_length": 256,
+  "num_train_epochs": 1,
+  "per_device_train_batch_size": 1,
+  "per_device_eval_batch_size": 1,
+  "learning_rate": 0.0002,
+  "use_peft": true,
+  "use_qlora": true,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "lora_target_modules": "q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj",
+  "generation_batch_size": 1,
+  "max_new_tokens": 192
+}
