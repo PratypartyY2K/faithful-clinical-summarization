@@ -236,6 +236,8 @@ def run_full_evaluation(
     verifier_model,
     max_new_tokens: int = 96,
     verifier_batch_size: int = 16,
+    claim_extractor_backend: str = "heuristic",
+    claim_extractor_model: str = "gpt-4.1-mini",
 ) -> Dict[str, object]:
     from src.modeling.pipeline import build_pipeline_report
 
@@ -250,6 +252,8 @@ def run_full_evaluation(
             verifier_model=verifier_model,
             max_new_tokens=max_new_tokens,
             verifier_batch_size=verifier_batch_size,
+            claim_extractor_backend=claim_extractor_backend,
+            claim_extractor_model=claim_extractor_model,
         )
         for example in raw_examples
     ]

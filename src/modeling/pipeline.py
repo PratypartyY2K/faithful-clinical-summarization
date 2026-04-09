@@ -13,7 +13,7 @@ from transformers import (
     AutoTokenizer,
 )
 
-from src.preprocessing.claim_extractor import split_into_claims
+from src.preprocessing.claim_extractor import extract_claims
 
 
 VerifierBundle = Tuple[object, AutoModelForSequenceClassification]
@@ -209,6 +209,8 @@ def build_pipeline_report(
     verifier_model,
     max_new_tokens: int = 96,
     verifier_batch_size: int = 8,
+    claim_extractor_backend: str = "heuristic",
+    claim_extractor_model: str = "gpt-4.1-mini",
 ) -> Dict[str, object]:
     summary = generate_summary(
         dialogue=str(example["dialogue"]),
@@ -216,7 +218,11 @@ def build_pipeline_report(
         summarizer_model=summarizer_model,
         max_new_tokens=max_new_tokens,
     )
-    claims = split_into_claims(summary)
+    claims = extract_claims(
+        summary,
+        backend=claim_extractor_backend,
+        llm_model=claim_extractor_model,
+    )
     claim_scores = score_claims(
         dialogue=str(example["dialogue"]),
         claims=claims,
@@ -229,5 +235,6 @@ def build_pipeline_report(
         "dialogue": example["dialogue"],
         "reference_summary": example.get("summary"),
         "generated_summary": summary,
+        "claim_extractor_backend": claim_extractor_backend,
         "claim_scores": claim_scores,
     }

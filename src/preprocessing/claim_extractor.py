@@ -65,6 +65,7 @@ def normalize_claim_text(text: str) -> str:
 
 def split_into_claims(summary: str) -> List[str]:
     claims: List[str] = []
+    seen_normalized = set()
     for sentence in SENTENCE_SPLIT_PATTERN.split(summary.strip()):
         sentence = sentence.strip()
         if not sentence:
@@ -75,8 +76,21 @@ def split_into_claims(summary: str) -> List[str]:
                 for fragment in fragments:
                     claim = normalize_claim_text(fragment)
                     normalized_key = LEADING_ARTICLE_PATTERN.sub("", claim).lower()
-                    if claim and normalized_key not in {
-                        LEADING_ARTICLE_PATTERN.sub("", existing).lower() for existing in claims
-                    }:
+                    if claim and normalized_key not in seen_normalized:
+                        seen_normalized.add(normalized_key)
                         claims.append(claim)
     return claims
+
+
+def extract_claims(
+    summary: str,
+    backend: str = "heuristic",
+    llm_model: str = "gpt-4.1-mini",
+) -> List[str]:
+    if backend == "heuristic":
+        return split_into_claims(summary)
+    if backend == "llm":
+        from src.preprocessing.llm_claim_extractor import extract_claims_with_openai
+
+        return extract_claims_with_openai(summary, model=llm_model)
+    raise ValueError(f"Unsupported claim extraction backend: {backend}")

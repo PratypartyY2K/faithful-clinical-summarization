@@ -1,0 +1,11 @@
+{
+  "raw_test_file": "data/dummy/raw/test.jsonl",
+  "verifier_test_file": "data/dummy/processed/verifier/test.jsonl",
+  "summarizer_dir": "artifacts/summarizer/flan_t5_small",
+  "verifier_dir": "artifacts/verifier/deberta_v3_large",
+  "max_new_tokens": 128,
+  "verifier_batch_size": 16,
+  "claim_extractor_backend": "llm",
+  "claim_extractor_model": "gpt-4.1-mini",
+  "output_file": "artifacts/evaluation/full_pipeline_llm_claims_report.json"
+}

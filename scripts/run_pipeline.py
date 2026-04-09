@@ -20,6 +20,8 @@ def main() -> None:
     parser.add_argument("--verifier-dir", type=Path, default=Path("artifacts/verifier"))
     parser.add_argument("--max-new-tokens", type=int, default=96)
     parser.add_argument("--verifier-batch-size", type=int, default=16)
+    parser.add_argument("--claim-extractor-backend", choices=("heuristic", "llm"), default="heuristic")
+    parser.add_argument("--claim-extractor-model", default="gpt-4.1-mini")
     parser.add_argument("--output-file", type=Path, default=Path("artifacts/pipeline_report.json"))
     args = parse_args_with_optional_config(parser)
 
@@ -34,6 +36,8 @@ def main() -> None:
         verifier_model=verifier_model,
         max_new_tokens=args.max_new_tokens,
         verifier_batch_size=args.verifier_batch_size,
+        claim_extractor_backend=args.claim_extractor_backend,
+        claim_extractor_model=args.claim_extractor_model,
     )
     report["run_metadata"] = build_run_metadata(
         stage="single_pipeline_run",

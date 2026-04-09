@@ -1,15 +1,73 @@
 # Faithful Clinical Summarization via Atomic Claim Verification
 
-This repository contains a lightweight end-to-end prototype for faithful clinical summarization. The current codebase is a synthetic stand-in for the planned MIMIC-III pipeline while official data access is pending. The workflow trains:
+This repository contains a synthetic end-to-end prototype for faithful clinical summarization. It is designed to mirror the planned project pipeline while official MIMIC-III access is still pending.
 
-- a summarizer that generates a note from a patient-clinician dialogue
-- a verifier that scores whether each atomic claim in the generated summary is supported by the source dialogue or note
+The current system supports:
+- summarization training with a small seq2seq baseline or an optional PEFT/QLoRA causal LM path
+- claim-level verification with a DeBERTa-style verifier
+- heuristic atomic claim extraction, with an optional OpenAI-backed LLM extractor
+- evaluation with ROUGE, BERTScore, a FactScore-style support rate, and qualitative error summaries
 
-The current implementation is designed for local experimentation with a synthetic dummy dataset, not for direct use on real clinical data.
+## Project Status
+
+What is implemented:
+- synthetic dataset generation with binary or 3-way NLI labels
+- dataset preparation into summarization and verifier splits
+- `flan-t5-small` baseline training path
+- optional Llama-style PEFT/QLoRA training path
+- `microsoft/deberta-v3-large` verifier training path
+- batched verifier inference
+- config-driven experiment presets
+- run metadata output for training, inference, and evaluation
+- lightweight unit tests for core helpers
+
+What is not implemented yet:
+- real MIMIC-III ingestion and preprocessing
+- real-data experiments and final result tables
+- human evaluation
+- model-based atomic fact extraction beyond the current heuristic splitter
+
+## Pipeline Overview
+
+1. Generate synthetic dialogue, summary, and claim-label examples.
+2. Convert raw examples into:
+   - a summarization dataset
+   - a claim verification dataset
+3. Train either a seq2seq baseline or a PEFT/QLoRA causal summarizer.
+4. Train a verifier on dialogue-claim pairs with binary or NLI-style labels.
+5. Generate a summary, decompose it into atomic claims, and score each claim against the source.
+6. Evaluate ROUGE, BERTScore, FactScore-style support, label breakdowns, and qualitative error patterns.
+
+## Repository Layout
+
+```text
+.
+├── README.md
+├── configs
+│   ├── data
+│   ├── evaluation
+│   ├── summarizer
+│   └── verifier
+├── requirements.txt
+├── scripts
+│   ├── create_dummy_dataset.py
+│   ├── evaluate_pipeline.py
+│   ├── prepare_datasets.py
+│   ├── run_pipeline.py
+│   ├── train_summarizer.py
+│   └── train_verifier.py
+├── src
+│   ├── config
+│   ├── evaluation
+│   ├── modeling
+│   ├── preprocessing
+│   └── utils
+└── tests
+```
 
 ## Config-Driven Runs
 
-All main scripts support `--config <json-file>`. Presets are provided under `configs/`.
+All main scripts support `--config <json-file>`. Presets are stored under `configs/`.
 
 Synthetic data setup:
 
@@ -42,55 +100,26 @@ Full evaluation run:
 python3 scripts/evaluate_pipeline.py --config configs/evaluation/full_pipeline.json
 ```
 
-## Pipeline Overview
+Full evaluation with LLM claim extraction:
 
-1. Generate synthetic dialogue, summary, and claim-label examples.
-2. Convert the raw examples into:
-   - a summarization dataset
-   - a claim verification dataset
-3. Train either a seq2seq baseline or a PEFT/QLoRA causal summarizer.
-4. Train a verifier on dialogue-claim pairs with binary or NLI-style labels.
-5. Run inference on one dialogue, split the generated summary into atomic claims, and score each claim with the verifier.
-6. Evaluate ROUGE, BERTScore, FactScore-style claim support, and qualitative error patterns on the test split.
-
-## Repository Layout
-
-```text
-.
-├── README.md
-├── configs
-│   ├── data
-│   ├── evaluation
-│   ├── summarizer
-│   └── verifier
-├── requirements.txt
-├── src
-│   ├── evaluation
-│   ├── config
-│   ├── modeling
-│   └── preprocessing
-└── scripts
-    ├── create_dummy_dataset.py
-    ├── evaluate_pipeline.py
-    ├── prepare_datasets.py
-    ├── run_pipeline.py
-    ├── train_summarizer.py
-    └── train_verifier.py
+```bash
+export OPENAI_API_KEY=...
+python3 scripts/evaluate_pipeline.py --config configs/evaluation/full_pipeline_llm_claims.json
 ```
 
-## Implemented Scripts
+Additional preset notes are in [configs/README.md](configs/README.md).
+
+## Core Scripts
 
 ### `scripts/create_dummy_dataset.py`
 
 Creates a synthetic clinical dataset in JSONL format. Each example contains:
-
 - `dialogue`
 - `summary`
 - `claims`
 - `metadata`
 
-By default the synthetic verifier labels follow a 3-way NLI schema:
-
+By default the verifier labels follow a 3-way NLI schema:
 - `contradiction`
 - `neutral`
 - `entailment`
@@ -105,104 +134,60 @@ data/dummy/raw/
   manifest.json
 ```
 
-Example:
-
-```bash
-python3 scripts/create_dummy_dataset.py --train-size 24 --val-size 6 --test-size 6
-```
-
 ### `scripts/prepare_datasets.py`
 
 Transforms raw examples into task-specific splits:
-
 - `data/dummy/processed/summarization/*.jsonl`
 - `data/dummy/processed/verifier/*.jsonl`
-
-Example:
-
-```bash
-python3 scripts/prepare_datasets.py
-```
 
 ### `scripts/train_summarizer.py`
 
 Trains either:
+- a seq2seq baseline such as `google/flan-t5-small`
+- a causal LM summarizer with optional PEFT/QLoRA, suitable for Llama-style models
 
-- a seq2seq baseline such as `google/flan-t5-small`, or
-- a causal LM summarizer with optional PEFT/QLoRA, suitable for a Llama-style model
-
-Default output:
-
-- `artifacts/summarizer`
-
-Example:
-
-```bash
-python3 scripts/train_summarizer.py --num-train-epochs 1
-```
-
-QLoRA-style example:
-
-```bash
-python3 scripts/train_summarizer.py \
-  --trainer-type causal \
-  --model-name meta-llama/Meta-Llama-3-8B-Instruct \
-  --use-peft \
-  --use-qlora
-```
+Outputs:
+- model artifacts under the configured summarizer directory
+- `generation_metrics.json`
+- `run_metadata.json`
 
 ### `scripts/train_verifier.py`
 
 Trains a claim verifier on dialogue-claim pairs.
 
-Default model:
-
+Default backbone:
 - `microsoft/deberta-v3-large`
 
-Default output:
-
-- `artifacts/verifier`
-
-Example:
-
-```bash
-python3 scripts/train_verifier.py --num-train-epochs 1
-```
+Outputs:
+- model artifacts under the configured verifier directory
+- `verifier_metrics.json`
+- `run_metadata.json`
 
 ### `scripts/run_pipeline.py`
 
-Loads the trained summarizer and verifier, generates a summary for the first example in the input file, decomposes the summary into heuristic atomic claims, scores each claim with batched verifier inference, and writes a JSON report.
+Loads trained models, generates a summary for one example, decomposes it into heuristic atomic claims, scores each claim with batched verifier inference, and writes a report.
 
-Default output:
-
-- `artifacts/pipeline_report.json`
-
-Example:
-
-```bash
-python3 scripts/run_pipeline.py
-```
+Outputs:
+- `artifacts/pipeline_report.json` by default
 
 ### `scripts/evaluate_pipeline.py`
 
 Runs the trained pipeline over the synthetic test set and reports:
+- ROUGE
+- BERTScore
+- FactScore-style average support rate
+- contradiction and neutral/unsupported rates
+- verifier classification metrics
+- qualitative error analysis
+- an aggregate summary block
 
-- ROUGE on generated summaries
-- BERTScore on generated summaries
-- FactScore-style average claim support rate
-- average claim support rate on generated outputs
-- verifier classification metrics on held-out claim examples
-- qualitative error analysis for unsupported claims
+Outputs:
+- `evaluation_report.json`
+- `evaluation_run_metadata.json`
 
-Default output:
-
-- `artifacts/evaluation_report.json`
-
-Example:
-
-```bash
-python3 scripts/evaluate_pipeline.py
-```
+Claim extraction can use either:
+- the default heuristic backend
+- an OpenAI-backed LLM backend selected with `--claim-extractor-backend llm`
 
 ## Quick Start
 
@@ -214,45 +199,48 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Generate dummy data
+### 2. Generate dummy data and processed splits
 
 ```bash
-python3 scripts/create_dummy_dataset.py
-```
-
-### 3. Prepare training splits
-
-```bash
+python3 scripts/create_dummy_dataset.py --config configs/data/dummy_nli.json
 python3 scripts/prepare_datasets.py
 ```
 
-### 4. Train the summarizer
+### 3. Train a summarizer
 
 ```bash
-python3 scripts/train_summarizer.py
+python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_small.json
 ```
 
-### 5. Train the verifier
+### 4. Train a verifier
 
 ```bash
-python3 scripts/train_verifier.py
+python3 scripts/train_verifier.py --config configs/verifier/deberta_v3_large.json
 ```
 
-### 6. Run the full pipeline
+### 5. Run evaluation
 
 ```bash
-python3 scripts/run_pipeline.py
+python3 scripts/evaluate_pipeline.py --config configs/evaluation/full_pipeline.json
 ```
 
-### 7. Evaluate the full pipeline
+## Testing
+
+Run the lightweight test suite with:
 
 ```bash
-python3 scripts/evaluate_pipeline.py
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
+
+These tests cover:
+- config loading
+- dummy dataset label schema
+- claim extraction behavior
+- evaluation summary helpers
 
 ## Expected Outputs
 
-After a full run, the repository will typically contain:
+After a full synthetic run, the repository will typically contain:
 
 ```text
 data/
@@ -273,15 +261,33 @@ data/
         test.jsonl
 
 artifacts/
-  evaluation_report.json
+  evaluation/
+  pipeline_report.json
   summarizer/
   verifier/
-  pipeline_report.json
 ```
 
-## Notes
+Depending on the configured paths, artifact directories may also include:
+- `generation_metrics.json`
+- `verifier_metrics.json`
+- `run_metadata.json`
+- `evaluation_run_metadata.json`
 
-- The dataset in this repository is synthetic and intended for development and demonstration.
-- The verifier currently operates on heuristic atomic claims produced by rule-based splitting.
-- Training defaults are small so the pipeline is runnable on a local machine, but model downloads still require internet access the first time you run them.
-- The `src/` package is structured so the synthetic dataset can later be swapped for a real clinical dataset with minimal changes to downstream training and evaluation scripts.
+## Limitations
+
+- The dataset is synthetic and intended for development only.
+- The current atomic claim extractor is heuristic, not parser-based or model-based.
+- An optional OpenAI-backed claim extractor is available, but it requires API access and adds runtime cost.
+- The FactScore-style metric here is an engineering proxy built from claim support predictions, not a full reproduction of the original FActScore framework.
+- Model downloads require internet access the first time they are used.
+- The Llama-3 QLoRA path assumes a CUDA-capable environment.
+
+## Transition To Real Data
+
+The codebase is structured so the synthetic dataset can later be replaced with a real clinical dataset with minimal disruption to:
+- training scripts
+- verifier logic
+- evaluation scripts
+- config presets
+
+The main missing step is building the real MIMIC ingestion and preprocessing layer once access is available.
