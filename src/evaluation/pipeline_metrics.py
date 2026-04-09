@@ -6,10 +6,6 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-import evaluate
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
-
-from src.modeling.pipeline import build_pipeline_report, score_claims
 from src.preprocessing.io import read_jsonl
 
 
@@ -22,6 +18,10 @@ def is_supported_claim(score: Dict[str, object]) -> bool:
     return str(score.get("predicted_label_name", "")).lower() in SUPPORTED_LABEL_NAMES
 
 
+def normalize_score_label(score: Dict[str, object]) -> str:
+    return str(score.get("predicted_label_name", "")).lower()
+
+
 def compute_claim_support_rate(claim_scores: Iterable[Dict[str, object]]) -> float:
     scores = list(claim_scores)
     if not scores:
@@ -30,7 +30,36 @@ def compute_claim_support_rate(claim_scores: Iterable[Dict[str, object]]) -> flo
     return round(supported / len(scores), 4)
 
 
+def summarize_claim_labels(claim_scores: Iterable[Dict[str, object]]) -> Dict[str, float]:
+    scores = list(claim_scores)
+    total = len(scores)
+    if total == 0:
+        return {
+            "support_rate": 0.0,
+            "contradiction_rate": 0.0,
+            "neutral_or_unsupported_rate": 0.0,
+        }
+    contradiction_count = 0
+    neutral_count = 0
+    supported_count = 0
+    for score in scores:
+        label_name = normalize_score_label(score)
+        if label_name in CONTRADICTION_LABEL_NAMES:
+            contradiction_count += 1
+        elif label_name in SUPPORTED_LABEL_NAMES:
+            supported_count += 1
+        else:
+            neutral_count += 1
+    return {
+        "support_rate": round(supported_count / total, 4),
+        "contradiction_rate": round(contradiction_count / total, 4),
+        "neutral_or_unsupported_rate": round(neutral_count / total, 4),
+    }
+
+
 def compute_text_overlap_metrics(predictions: List[str], references: List[str]) -> Dict[str, object]:
+    import evaluate
+
     rouge = evaluate.load("rouge")
     rouge_scores = rouge.compute(predictions=predictions, references=references)
     bertscore = evaluate.load("bertscore")
@@ -51,6 +80,7 @@ def evaluate_generated_reports(reports: List[Dict[str, object]]) -> Dict[str, ob
     references = [str(report.get("reference_summary") or "") for report in reports]
     overlap_metrics = compute_text_overlap_metrics(predictions=predictions, references=references)
     claim_rates = [compute_claim_support_rate(report["claim_scores"]) for report in reports]
+    label_summaries = [summarize_claim_labels(report["claim_scores"]) for report in reports]
     avg_claim_count = (
         round(sum(len(report["claim_scores"]) for report in reports) / len(reports), 4)
         if reports
@@ -61,6 +91,14 @@ def evaluate_generated_reports(reports: List[Dict[str, object]]) -> Dict[str, ob
         "avg_claim_count": avg_claim_count,
         "avg_claim_support_rate": round(sum(claim_rates) / len(claim_rates), 4) if claim_rates else 0.0,
         "factscore": round(sum(claim_rates) / len(claim_rates), 4) if claim_rates else 0.0,
+        "avg_contradiction_rate": round(
+            sum(summary["contradiction_rate"] for summary in label_summaries) / len(label_summaries),
+            4,
+        ) if label_summaries else 0.0,
+        "avg_neutral_or_unsupported_rate": round(
+            sum(summary["neutral_or_unsupported_rate"] for summary in label_summaries) / len(label_summaries),
+            4,
+        ) if label_summaries else 0.0,
         **overlap_metrics,
     }
 
@@ -71,6 +109,10 @@ def evaluate_verifier_dataset(
     verifier_model,
     batch_size: int = 16,
 ) -> Dict[str, float]:
+    from src.modeling.pipeline import score_claims
+
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+
     predicted_labels: List[int] = []
     gold_labels: List[int] = []
     for example in verifier_examples:
@@ -164,6 +206,27 @@ def build_qualitative_error_analysis(reports: List[Dict[str, object]], max_examp
     }
 
 
+def build_evaluation_summary(
+    generation_metrics: Dict[str, object],
+    verifier_metrics: Dict[str, object],
+    qualitative_error_analysis: Dict[str, object],
+) -> Dict[str, object]:
+    return {
+        "faithfulness_summary": {
+            "factscore": generation_metrics.get("factscore", 0.0),
+            "avg_claim_support_rate": generation_metrics.get("avg_claim_support_rate", 0.0),
+            "avg_contradiction_rate": generation_metrics.get("avg_contradiction_rate", 0.0),
+            "avg_neutral_or_unsupported_rate": generation_metrics.get("avg_neutral_or_unsupported_rate", 0.0),
+        },
+        "overlap_summary": {
+            "rouge": generation_metrics.get("rouge", {}),
+            "bertscore": generation_metrics.get("bertscore", {}),
+        },
+        "verifier_summary": verifier_metrics,
+        "error_summary": qualitative_error_analysis.get("error_type_counts", {}),
+    }
+
+
 def run_full_evaluation(
     raw_examples_path: Path,
     verifier_examples_path: Path,
@@ -174,6 +237,8 @@ def run_full_evaluation(
     max_new_tokens: int = 96,
     verifier_batch_size: int = 16,
 ) -> Dict[str, object]:
+    from src.modeling.pipeline import build_pipeline_report
+
     raw_examples = read_jsonl(raw_examples_path)
     verifier_examples = read_jsonl(verifier_examples_path)
     reports = [
@@ -188,15 +253,23 @@ def run_full_evaluation(
         )
         for example in raw_examples
     ]
+    generation_metrics = evaluate_generated_reports(reports)
+    verifier_metrics = evaluate_verifier_dataset(
+        verifier_examples=verifier_examples,
+        verifier_tokenizer=verifier_tokenizer,
+        verifier_model=verifier_model,
+        batch_size=verifier_batch_size,
+    )
+    qualitative_error_analysis = build_qualitative_error_analysis(reports)
     return {
-        "generation_metrics": evaluate_generated_reports(reports),
-        "verifier_metrics": evaluate_verifier_dataset(
-            verifier_examples=verifier_examples,
-            verifier_tokenizer=verifier_tokenizer,
-            verifier_model=verifier_model,
-            batch_size=verifier_batch_size,
+        "generation_metrics": generation_metrics,
+        "verifier_metrics": verifier_metrics,
+        "qualitative_error_analysis": qualitative_error_analysis,
+        "summary": build_evaluation_summary(
+            generation_metrics=generation_metrics,
+            verifier_metrics=verifier_metrics,
+            qualitative_error_analysis=qualitative_error_analysis,
         ),
-        "qualitative_error_analysis": build_qualitative_error_analysis(reports),
         "example_reports": reports,
     }
 

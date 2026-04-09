@@ -7,8 +7,10 @@ import argparse
 import json
 from pathlib import Path
 
+from src.config.cli import parse_args_with_optional_config
 from src.modeling.pipeline import build_pipeline_report, load_summarizer, load_verifier
 from src.preprocessing.io import read_first_jsonl_row
+from src.utils.metadata import build_run_metadata
 
 
 def main() -> None:
@@ -19,7 +21,7 @@ def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=96)
     parser.add_argument("--verifier-batch-size", type=int, default=16)
     parser.add_argument("--output-file", type=Path, default=Path("artifacts/pipeline_report.json"))
-    args = parser.parse_args()
+    args = parse_args_with_optional_config(parser)
 
     example = read_first_jsonl_row(args.input_file)
     summarizer_tokenizer, summarizer_model = load_summarizer(args.summarizer_dir)
@@ -32,6 +34,11 @@ def main() -> None:
         verifier_model=verifier_model,
         max_new_tokens=args.max_new_tokens,
         verifier_batch_size=args.verifier_batch_size,
+    )
+    report["run_metadata"] = build_run_metadata(
+        stage="single_pipeline_run",
+        args=args,
+        extra={"input_example_id": example["example_id"]},
     )
     args.output_file.parent.mkdir(parents=True, exist_ok=True)
     args.output_file.write_text(json.dumps(report, indent=2), encoding="utf-8")

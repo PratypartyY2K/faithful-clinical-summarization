@@ -20,6 +20,7 @@ from transformers import (
 )
 
 from src.config.cli import parse_args_with_optional_config
+from src.utils.metadata import build_run_metadata, write_json
 
 
 DEFAULT_LABEL_MAP = {
@@ -136,7 +137,19 @@ def main() -> None:
     metrics = trainer.evaluate()
     trainer.save_model(str(args.output_dir))
     tokenizer.save_pretrained(str(args.output_dir))
-    (args.output_dir / "verifier_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    write_json(args.output_dir / "verifier_metrics.json", metrics)
+    write_json(
+        args.output_dir / "run_metadata.json",
+        build_run_metadata(
+            stage="verifier_training",
+            args=args,
+            extra={
+                "train_examples": len(dataset["train"]),
+                "validation_examples": len(dataset["validation"]),
+                "label_mapping": id2label,
+            },
+        ),
+    )
     print(json.dumps(metrics, indent=2))
     print(f"Saved verifier artifacts to {args.output_dir}")
 

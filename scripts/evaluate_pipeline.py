@@ -10,6 +10,7 @@ from pathlib import Path
 from src.config.cli import parse_args_with_optional_config
 from src.evaluation.pipeline_metrics import run_full_evaluation, write_evaluation_report
 from src.modeling.pipeline import load_summarizer, load_verifier
+from src.utils.metadata import build_run_metadata, write_json
 
 
 def main() -> None:
@@ -44,6 +45,15 @@ def main() -> None:
         verifier_batch_size=args.verifier_batch_size,
     )
     write_evaluation_report(report, args.output_file)
+    write_json(
+        args.output_file.parent / "evaluation_run_metadata.json",
+        build_run_metadata(
+            stage="pipeline_evaluation",
+            args=args,
+            extra={"summary": report.get("summary", {})},
+        ),
+    )
+    print(json.dumps(report["summary"], indent=2))
     print(json.dumps(report["generation_metrics"], indent=2))
     print(json.dumps(report["verifier_metrics"], indent=2))
     print(json.dumps(report["qualitative_error_analysis"], indent=2))

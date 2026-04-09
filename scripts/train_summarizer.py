@@ -27,6 +27,7 @@ from transformers import (
 from src.config.cli import parse_args_with_optional_config
 from src.evaluation.pipeline_metrics import compute_text_overlap_metrics
 from src.modeling.pipeline import build_summary_prompt, generate_summaries_batch
+from src.utils.metadata import build_run_metadata, write_json
 
 
 def parse_args() -> argparse.Namespace:
@@ -268,7 +269,19 @@ def main() -> None:
     tokenizer.save_pretrained(str(args.output_dir))
     generation_metrics = evaluate_generation(dataset, tokenizer, trainer.model, args)
     metrics_path = args.output_dir / "generation_metrics.json"
-    metrics_path.write_text(json.dumps(generation_metrics, indent=2), encoding="utf-8")
+    write_json(metrics_path, generation_metrics)
+    write_json(
+        args.output_dir / "run_metadata.json",
+        build_run_metadata(
+            stage="summarizer_training",
+            args=args,
+            extra={
+                "metrics_file": metrics_path,
+                "train_examples": len(dataset["train"]),
+                "validation_examples": len(dataset["validation"]),
+            },
+        ),
+    )
     print(json.dumps(generation_metrics, indent=2))
     print(f"Saved summarizer artifacts to {args.output_dir}")
 
