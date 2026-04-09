@@ -13,10 +13,10 @@ The current implementation is designed for local experimentation with a syntheti
 2. Convert the raw examples into:
    - a summarization dataset
    - a claim verification dataset
-3. Train a seq2seq summarizer.
-4. Train a binary verifier on dialogue-claim pairs.
+3. Train either a seq2seq baseline or a PEFT/QLoRA causal summarizer.
+4. Train a verifier on dialogue-claim pairs with binary or NLI-style labels.
 5. Run inference on one dialogue, split the generated summary into atomic claims, and score each claim with the verifier.
-6. Evaluate summary overlap and claim support on the test split.
+6. Evaluate ROUGE, BERTScore, FactScore-style claim support, and qualitative error patterns on the test split.
 
 ## Repository Layout
 
@@ -47,6 +47,12 @@ Creates a synthetic clinical dataset in JSONL format. Each example contains:
 - `summary`
 - `claims`
 - `metadata`
+
+By default the synthetic verifier labels follow a 3-way NLI schema:
+
+- `contradiction`
+- `neutral`
+- `entailment`
 
 Default output:
 
@@ -79,11 +85,10 @@ python3 scripts/prepare_datasets.py
 
 ### `scripts/train_summarizer.py`
 
-Trains a summarization baseline using Hugging Face Transformers.
+Trains either:
 
-Default model:
-
-- `google/flan-t5-small`
+- a seq2seq baseline such as `google/flan-t5-small`, or
+- a causal LM summarizer with optional PEFT/QLoRA, suitable for a Llama-style model
 
 Default output:
 
@@ -95,13 +100,23 @@ Example:
 python3 scripts/train_summarizer.py --num-train-epochs 1
 ```
 
+QLoRA-style example:
+
+```bash
+python3 scripts/train_summarizer.py \
+  --trainer-type causal \
+  --model-name meta-llama/Meta-Llama-3-8B-Instruct \
+  --use-peft \
+  --use-qlora
+```
+
 ### `scripts/train_verifier.py`
 
-Trains a binary claim verifier on dialogue-claim pairs.
+Trains a claim verifier on dialogue-claim pairs.
 
 Default model:
 
-- `distilbert-base-uncased`
+- `microsoft/deberta-v3-large`
 
 Default output:
 
@@ -115,7 +130,7 @@ python3 scripts/train_verifier.py --num-train-epochs 1
 
 ### `scripts/run_pipeline.py`
 
-Loads the trained summarizer and verifier, generates a summary for the first example in the input file, decomposes the summary into heuristic atomic claims, scores each claim, and writes a JSON report.
+Loads the trained summarizer and verifier, generates a summary for the first example in the input file, decomposes the summary into heuristic atomic claims, scores each claim with batched verifier inference, and writes a JSON report.
 
 Default output:
 
@@ -132,8 +147,11 @@ python3 scripts/run_pipeline.py
 Runs the trained pipeline over the synthetic test set and reports:
 
 - ROUGE on generated summaries
+- BERTScore on generated summaries
+- FactScore-style average claim support rate
 - average claim support rate on generated outputs
 - verifier classification metrics on held-out claim examples
+- qualitative error analysis for unsupported claims
 
 Default output:
 

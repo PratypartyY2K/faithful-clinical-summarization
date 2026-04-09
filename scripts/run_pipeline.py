@@ -17,6 +17,7 @@ def main() -> None:
     parser.add_argument("--summarizer-dir", type=Path, default=Path("artifacts/summarizer"))
     parser.add_argument("--verifier-dir", type=Path, default=Path("artifacts/verifier"))
     parser.add_argument("--max-new-tokens", type=int, default=96)
+    parser.add_argument("--verifier-batch-size", type=int, default=16)
     parser.add_argument("--output-file", type=Path, default=Path("artifacts/pipeline_report.json"))
     args = parser.parse_args()
 
@@ -30,6 +31,7 @@ def main() -> None:
         verifier_tokenizer=verifier_tokenizer,
         verifier_model=verifier_model,
         max_new_tokens=args.max_new_tokens,
+        verifier_batch_size=args.verifier_batch_size,
     )
     args.output_file.parent.mkdir(parents=True, exist_ok=True)
     args.output_file.write_text(json.dumps(report, indent=2), encoding="utf-8")

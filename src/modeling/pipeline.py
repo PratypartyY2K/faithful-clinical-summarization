@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 import torch
 from transformers import (
+    AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -16,12 +17,59 @@ from src.preprocessing.claim_extractor import split_into_claims
 
 
 VerifierBundle = Tuple[object, AutoModelForSequenceClassification]
-SummarizerBundle = Tuple[object, AutoModelForSeq2SeqLM]
+SummarizerBundle = Tuple[object, object]
+
+
+def build_summary_prompt(dialogue: str) -> str:
+    return (
+        "You are a clinical documentation assistant.\n"
+        "Write a concise faithful clinical summary grounded only in the source dialogue.\n\n"
+        f"Dialogue:\n{dialogue}\n\n"
+        "Summary:\n"
+    )
+
+
+def get_model_device(model) -> torch.device:
+    try:
+        return next(model.parameters()).device
+    except StopIteration:
+        return torch.device("cpu")
+
+
+def normalize_label_name(label_name: str) -> str:
+    return label_name.strip().lower().replace("_", " ")
+
+
+def get_label_lookup(model) -> Dict[int, str]:
+    id2label = getattr(model.config, "id2label", None) or {}
+    if id2label:
+        return {int(label_id): normalize_label_name(label_name) for label_id, label_name in id2label.items()}
+    num_labels = int(getattr(model.config, "num_labels", 2))
+    if num_labels == 3:
+        return {0: "contradiction", 1: "neutral", 2: "entailment"}
+    return {0: "unsupported", 1: "supported"}
+
+
+def get_support_label_ids(model) -> List[int]:
+    return [
+        label_id
+        for label_id, label_name in get_label_lookup(model).items()
+        if label_name in {"supported", "entailment", "entailed"}
+    ]
 
 
 def load_summarizer(model_dir: Path) -> SummarizerBundle:
     tokenizer = AutoTokenizer.from_pretrained(str(model_dir))
-    model = AutoModelForSeq2SeqLM.from_pretrained(str(model_dir))
+    adapter_config = model_dir / "adapter_config.json"
+    if adapter_config.exists():
+        from peft import AutoPeftModelForCausalLM
+
+        model = AutoPeftModelForCausalLM.from_pretrained(str(model_dir))
+    else:
+        try:
+            model = AutoModelForSeq2SeqLM.from_pretrained(str(model_dir))
+        except (ValueError, OSError):
+            model = AutoModelForCausalLM.from_pretrained(str(model_dir))
     return tokenizer, model
 
 
@@ -37,11 +85,104 @@ def generate_summary(
     summarizer_model,
     max_new_tokens: int = 96,
 ) -> str:
-    prompt = f"Summarize this clinical dialogue:\n{dialogue}"
+    prompt = build_summary_prompt(dialogue)
+    device = get_model_device(summarizer_model)
     encoded = summarizer_tokenizer(prompt, return_tensors="pt", truncation=True)
+    encoded = {key: value.to(device) for key, value in encoded.items()}
     with torch.no_grad():
         generated = summarizer_model.generate(**encoded, max_new_tokens=max_new_tokens)
-    return summarizer_tokenizer.decode(generated[0], skip_special_tokens=True)
+    if getattr(summarizer_model.config, "is_encoder_decoder", False):
+        decoded_tokens = generated[0]
+    else:
+        prompt_length = encoded["input_ids"].shape[-1]
+        decoded_tokens = generated[0][prompt_length:]
+    return summarizer_tokenizer.decode(decoded_tokens, skip_special_tokens=True).strip()
+
+
+def generate_summaries_batch(
+    dialogues: Iterable[str],
+    summarizer_tokenizer,
+    summarizer_model,
+    max_new_tokens: int = 96,
+    batch_size: int = 4,
+) -> List[str]:
+    prompts = [build_summary_prompt(dialogue) for dialogue in dialogues]
+    outputs: List[str] = []
+    device = get_model_device(summarizer_model)
+    for start in range(0, len(prompts), batch_size):
+        batch_prompts = prompts[start : start + batch_size]
+        encoded = summarizer_tokenizer(
+            batch_prompts,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+        )
+        encoded = {key: value.to(device) for key, value in encoded.items()}
+        with torch.no_grad():
+            generated = summarizer_model.generate(**encoded, max_new_tokens=max_new_tokens)
+        if getattr(summarizer_model.config, "is_encoder_decoder", False):
+            decoded_batch = summarizer_tokenizer.batch_decode(generated, skip_special_tokens=True)
+        else:
+            prompt_lengths = encoded["attention_mask"].sum(dim=1).tolist()
+            decoded_batch = []
+            for row_index, row in enumerate(generated):
+                decoded_tokens = row[int(prompt_lengths[row_index]) :]
+                decoded_batch.append(
+                    summarizer_tokenizer.decode(decoded_tokens, skip_special_tokens=True).strip()
+                )
+        outputs.extend(text.strip() for text in decoded_batch)
+    return outputs
+
+
+def score_claims_batched(
+    dialogue: str,
+    claims: List[str],
+    verifier_tokenizer,
+    verifier_model,
+    batch_size: int = 8,
+) -> List[Dict[str, object]]:
+    scores: List[Dict[str, object]] = []
+    if not claims:
+        return scores
+    label_lookup = get_label_lookup(verifier_model)
+    support_label_ids = get_support_label_ids(verifier_model)
+    device = get_model_device(verifier_model)
+    for start in range(0, len(claims), batch_size):
+        batch_claims = claims[start : start + batch_size]
+        encoded = verifier_tokenizer(
+            [dialogue] * len(batch_claims),
+            batch_claims,
+            truncation=True,
+            padding=True,
+            return_tensors="pt",
+        )
+        encoded = {key: value.to(device) for key, value in encoded.items()}
+        with torch.no_grad():
+            logits = verifier_model(**encoded).logits
+        batch_probabilities = torch.softmax(logits, dim=-1).cpu()
+        batch_predictions = torch.argmax(batch_probabilities, dim=-1).cpu().tolist()
+        for claim, probabilities, predicted_label in zip(
+            batch_claims,
+            batch_probabilities,
+            batch_predictions,
+        ):
+            supported_probability = 0.0
+            if support_label_ids:
+                supported_probability = float(sum(float(probabilities[label_id]) for label_id in support_label_ids))
+            label_probabilities = {
+                label_lookup.get(label_id, str(label_id)): round(float(probabilities[label_id]), 4)
+                for label_id in range(len(probabilities))
+            }
+            scores.append(
+                {
+                    "claim": claim,
+                    "supported_probability": round(supported_probability, 4),
+                    "predicted_label": int(predicted_label),
+                    "predicted_label_name": label_lookup.get(int(predicted_label), str(predicted_label)),
+                    "label_probabilities": label_probabilities,
+                }
+            )
+    return scores
 
 
 def score_claims(
@@ -49,30 +190,15 @@ def score_claims(
     claims: List[str],
     verifier_tokenizer,
     verifier_model,
+    batch_size: int = 8,
 ) -> List[Dict[str, object]]:
-    scores: List[Dict[str, object]] = []
-    label_lookup = {0: "unsupported", 1: "supported"}
-    for claim in claims:
-        encoded = verifier_tokenizer(
-            dialogue,
-            claim,
-            truncation=True,
-            padding=True,
-            return_tensors="pt",
-        )
-        with torch.no_grad():
-            logits = verifier_model(**encoded).logits
-        probabilities = torch.softmax(logits, dim=-1)[0]
-        predicted_label = int(torch.argmax(probabilities).item())
-        scores.append(
-            {
-                "claim": claim,
-                "supported_probability": round(float(probabilities[min(1, len(probabilities) - 1)]), 4),
-                "predicted_label": predicted_label,
-                "predicted_label_name": label_lookup.get(predicted_label, str(predicted_label)),
-            }
-        )
-    return scores
+    return score_claims_batched(
+        dialogue=dialogue,
+        claims=claims,
+        verifier_tokenizer=verifier_tokenizer,
+        verifier_model=verifier_model,
+        batch_size=batch_size,
+    )
 
 
 def build_pipeline_report(
@@ -82,6 +208,7 @@ def build_pipeline_report(
     verifier_tokenizer,
     verifier_model,
     max_new_tokens: int = 96,
+    verifier_batch_size: int = 8,
 ) -> Dict[str, object]:
     summary = generate_summary(
         dialogue=str(example["dialogue"]),
@@ -95,6 +222,7 @@ def build_pipeline_report(
         claims=claims,
         verifier_tokenizer=verifier_tokenizer,
         verifier_model=verifier_model,
+        batch_size=verifier_batch_size,
     )
     return {
         "example_id": example["example_id"],

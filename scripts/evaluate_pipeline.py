@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--summarizer-dir", type=Path, default=Path("artifacts/summarizer"))
     parser.add_argument("--verifier-dir", type=Path, default=Path("artifacts/verifier"))
     parser.add_argument("--max-new-tokens", type=int, default=96)
+    parser.add_argument("--verifier-batch-size", type=int, default=16)
     parser.add_argument(
         "--output-file",
         type=Path,
@@ -39,10 +40,12 @@ def main() -> None:
         verifier_tokenizer=verifier_tokenizer,
         verifier_model=verifier_model,
         max_new_tokens=args.max_new_tokens,
+        verifier_batch_size=args.verifier_batch_size,
     )
     write_evaluation_report(report, args.output_file)
     print(json.dumps(report["generation_metrics"], indent=2))
     print(json.dumps(report["verifier_metrics"], indent=2))
+    print(json.dumps(report["qualitative_error_analysis"], indent=2))
 
 
 if __name__ == "__main__":
