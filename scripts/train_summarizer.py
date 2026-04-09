@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 from pathlib import Path
 
 import evaluate
@@ -39,6 +40,8 @@ def main() -> None:
     )
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name)
+    if hasattr(model.config, "tie_word_embeddings"):
+        model.config.tie_word_embeddings = False
     rouge = evaluate.load("rouge")
 
     def preprocess(batch):
@@ -67,29 +70,41 @@ def main() -> None:
         scores = rouge.compute(predictions=decoded_predictions, references=decoded_labels)
         return {key: round(value, 4) for key, value in scores.items()}
 
-    training_args = Seq2SeqTrainingArguments(
-        output_dir=str(args.output_dir),
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
-        learning_rate=2e-5,
-        per_device_train_batch_size=args.per_device_train_batch_size,
-        per_device_eval_batch_size=args.per_device_eval_batch_size,
-        num_train_epochs=args.num_train_epochs,
-        predict_with_generate=True,
-        logging_steps=5,
-        report_to="none",
-        load_best_model_at_end=False,
+    training_kwargs = {
+        "output_dir": str(args.output_dir),
+        "save_strategy": "epoch",
+        "learning_rate": 2e-5,
+        "per_device_train_batch_size": args.per_device_train_batch_size,
+        "per_device_eval_batch_size": args.per_device_eval_batch_size,
+        "num_train_epochs": args.num_train_epochs,
+        "predict_with_generate": True,
+        "logging_steps": 5,
+        "report_to": "none",
+        "load_best_model_at_end": False,
+    }
+    strategy_arg = (
+        "eval_strategy"
+        if "eval_strategy" in inspect.signature(Seq2SeqTrainingArguments.__init__).parameters
+        else "evaluation_strategy"
     )
+    training_kwargs[strategy_arg] = "epoch"
+    training_args = Seq2SeqTrainingArguments(**training_kwargs)
 
-    trainer = Seq2SeqTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=tokenized["train"],
-        eval_dataset=tokenized["validation"],
-        tokenizer=tokenizer,
-        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model),
-        compute_metrics=compute_metrics,
+    trainer_kwargs = {
+        "model": model,
+        "args": training_args,
+        "train_dataset": tokenized["train"],
+        "eval_dataset": tokenized["validation"],
+        "data_collator": DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model),
+        "compute_metrics": compute_metrics,
+    }
+    processing_arg = (
+        "processing_class"
+        if "processing_class" in inspect.signature(Seq2SeqTrainer.__init__).parameters
+        else "tokenizer"
     )
+    trainer_kwargs[processing_arg] = tokenizer
+    trainer = Seq2SeqTrainer(**trainer_kwargs)
     trainer.train()
     trainer.save_model(str(args.output_dir))
     tokenizer.save_pretrained(str(args.output_dir))
