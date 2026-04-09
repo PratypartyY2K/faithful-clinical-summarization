@@ -1,9 +1,9 @@
 # Faithful Clinical Summarization via Atomic Claim Verification
 
-This repository contains a lightweight end-to-end prototype for faithful clinical dialogue summarization. The workflow trains:
+This repository contains a lightweight end-to-end prototype for faithful clinical summarization. The current codebase is a synthetic stand-in for the planned MIMIC-III pipeline while official data access is pending. The workflow trains:
 
 - a summarizer that generates a note from a patient-clinician dialogue
-- a verifier that scores whether each atomic claim in the generated summary is supported by the source dialogue
+- a verifier that scores whether each atomic claim in the generated summary is supported by the source dialogue or note
 
 The current implementation is designed for local experimentation with a synthetic dummy dataset, not for direct use on real clinical data.
 
@@ -16,6 +16,7 @@ The current implementation is designed for local experimentation with a syntheti
 3. Train a seq2seq summarizer.
 4. Train a binary verifier on dialogue-claim pairs.
 5. Run inference on one dialogue, split the generated summary into atomic claims, and score each claim with the verifier.
+6. Evaluate summary overlap and claim support on the test split.
 
 ## Repository Layout
 
@@ -23,8 +24,13 @@ The current implementation is designed for local experimentation with a syntheti
 .
 ├── README.md
 ├── requirements.txt
+├── src
+│   ├── evaluation
+│   ├── modeling
+│   └── preprocessing
 └── scripts
     ├── create_dummy_dataset.py
+    ├── evaluate_pipeline.py
     ├── prepare_datasets.py
     ├── run_pipeline.py
     ├── train_summarizer.py
@@ -109,7 +115,7 @@ python3 scripts/train_verifier.py --num-train-epochs 1
 
 ### `scripts/run_pipeline.py`
 
-Loads the trained summarizer and verifier, generates a summary for the first example in the input file, decomposes the summary into sentence-level claims, scores each claim, and writes a JSON report.
+Loads the trained summarizer and verifier, generates a summary for the first example in the input file, decomposes the summary into heuristic atomic claims, scores each claim, and writes a JSON report.
 
 Default output:
 
@@ -119,6 +125,24 @@ Example:
 
 ```bash
 python3 scripts/run_pipeline.py
+```
+
+### `scripts/evaluate_pipeline.py`
+
+Runs the trained pipeline over the synthetic test set and reports:
+
+- ROUGE on generated summaries
+- average claim support rate on generated outputs
+- verifier classification metrics on held-out claim examples
+
+Default output:
+
+- `artifacts/evaluation_report.json`
+
+Example:
+
+```bash
+python3 scripts/evaluate_pipeline.py
 ```
 
 ## Quick Start
@@ -161,6 +185,12 @@ python3 scripts/train_verifier.py
 python3 scripts/run_pipeline.py
 ```
 
+### 7. Evaluate the full pipeline
+
+```bash
+python3 scripts/evaluate_pipeline.py
+```
+
 ## Expected Outputs
 
 After a full run, the repository will typically contain:
@@ -184,6 +214,7 @@ data/
         test.jsonl
 
 artifacts/
+  evaluation_report.json
   summarizer/
   verifier/
   pipeline_report.json
@@ -192,5 +223,6 @@ artifacts/
 ## Notes
 
 - The dataset in this repository is synthetic and intended for development and demonstration.
-- The verifier currently operates on sentence-level claims produced by simple punctuation-based splitting.
+- The verifier currently operates on heuristic atomic claims produced by rule-based splitting.
 - Training defaults are small so the pipeline is runnable on a local machine, but model downloads still require internet access the first time you run them.
+- The `src/` package is structured so the synthetic dataset can later be swapped for a real clinical dataset with minimal changes to downstream training and evaluation scripts.

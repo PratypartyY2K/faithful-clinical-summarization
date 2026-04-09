@@ -5,54 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from pathlib import Path
-from typing import Dict, List
 
-import torch
-from transformers import (
-    AutoModelForSequenceClassification,
-    AutoModelForSeq2SeqLM,
-    AutoTokenizer,
-)
-
-
-def read_first_example(path: Path) -> Dict[str, object]:
-    with path.open("r", encoding="utf-8") as handle:
-        return json.loads(handle.readline())
-
-
-def split_into_claims(summary: str) -> List[str]:
-    raw_claims = re.split(r"(?<=[.!?])\s+", summary.strip())
-    return [claim.strip() for claim in raw_claims if claim.strip()]
-
-
-def score_claims(
-    dialogue: str,
-    claims: List[str],
-    verifier_tokenizer,
-    verifier_model,
-) -> List[Dict[str, object]]:
-    scores: List[Dict[str, object]] = []
-    for claim in claims:
-        encoded = verifier_tokenizer(
-            dialogue,
-            claim,
-            truncation=True,
-            padding=True,
-            return_tensors="pt",
-        )
-        with torch.no_grad():
-            logits = verifier_model(**encoded).logits
-        probabilities = torch.softmax(logits, dim=-1)[0]
-        scores.append(
-            {
-                "claim": claim,
-                "supported_probability": round(float(probabilities[1]), 4),
-                "predicted_label": int(torch.argmax(probabilities).item()),
-            }
-        )
-    return scores
+from src.modeling.pipeline import build_pipeline_report, load_summarizer, load_verifier
+from src.preprocessing.io import read_first_jsonl_row
 
 
 def main() -> None:
@@ -64,30 +20,17 @@ def main() -> None:
     parser.add_argument("--output-file", type=Path, default=Path("artifacts/pipeline_report.json"))
     args = parser.parse_args()
 
-    example = read_first_example(args.input_file)
-    summarizer_tokenizer = AutoTokenizer.from_pretrained(str(args.summarizer_dir))
-    summarizer_model = AutoModelForSeq2SeqLM.from_pretrained(str(args.summarizer_dir))
-    verifier_tokenizer = AutoTokenizer.from_pretrained(str(args.verifier_dir))
-    verifier_model = AutoModelForSequenceClassification.from_pretrained(str(args.verifier_dir))
-
-    prompt = f"Summarize this clinical dialogue:\n{example['dialogue']}"
-    encoded = summarizer_tokenizer(prompt, return_tensors="pt", truncation=True)
-    generated = summarizer_model.generate(**encoded, max_new_tokens=args.max_new_tokens)
-    summary = summarizer_tokenizer.decode(generated[0], skip_special_tokens=True)
-
-    claims = split_into_claims(summary)
-    claim_scores = score_claims(
-        dialogue=example["dialogue"],
-        claims=claims,
+    example = read_first_jsonl_row(args.input_file)
+    summarizer_tokenizer, summarizer_model = load_summarizer(args.summarizer_dir)
+    verifier_tokenizer, verifier_model = load_verifier(args.verifier_dir)
+    report = build_pipeline_report(
+        example=example,
+        summarizer_tokenizer=summarizer_tokenizer,
+        summarizer_model=summarizer_model,
         verifier_tokenizer=verifier_tokenizer,
         verifier_model=verifier_model,
+        max_new_tokens=args.max_new_tokens,
     )
-    report = {
-        "example_id": example["example_id"],
-        "dialogue": example["dialogue"],
-        "generated_summary": summary,
-        "claim_scores": claim_scores,
-    }
     args.output_file.parent.mkdir(parents=True, exist_ok=True)
     args.output_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
