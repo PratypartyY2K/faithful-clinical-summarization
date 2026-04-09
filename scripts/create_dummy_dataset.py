@@ -91,34 +91,49 @@ def build_summary(profile: Dict[str, str]) -> str:
     )
 
 
-def build_claims(profile: Dict[str, str]) -> List[Dict[str, object]]:
-    supported_claims = [
+def build_claims(profile: Dict[str, str], label_schema: str) -> List[Dict[str, object]]:
+    entailed_claims = [
         f"The patient has {profile['condition']}.",
         f"The patient reported {profile['symptom']}.",
         f"The clinician documented {profile['lab']}.",
         f"The plan includes {profile['medication']} at {profile['dosage']}.",
         f"The patient was advised to {profile['follow_up']}.",
     ]
-    unsupported_claims = [
+    contradicted_claims = [
+        f"The patient denied having {profile['condition']}.",
+        f"The clinician stopped {profile['medication']}.",
+        f"The patient denied {profile['symptom']}.",
+    ]
+    neutral_claims = [
         "The patient was admitted to the ICU.",
-        "The clinician stopped all medications.",
-        "The patient denied any current symptoms.",
+        "The patient lives alone.",
+        "The patient missed work this week.",
     ]
 
     claims: List[Dict[str, object]] = []
-    for claim in supported_claims:
-        claims.append({"claim": claim, "label": 1})
-    for claim in unsupported_claims:
-        claims.append({"claim": claim, "label": 0})
+    if label_schema == "binary":
+        for claim in entailed_claims:
+            claims.append({"claim": claim, "label": 1, "label_name": "supported"})
+        for claim in contradicted_claims + neutral_claims:
+            claims.append({"claim": claim, "label": 0, "label_name": "unsupported"})
+        return claims
+
+    label_map = {"contradiction": 0, "neutral": 1, "entailment": 2}
+    for claim in entailed_claims:
+        claims.append({"claim": claim, "label": label_map["entailment"], "label_name": "entailment"})
+    for claim in contradicted_claims:
+        claims.append({"claim": claim, "label": label_map["contradiction"], "label_name": "contradiction"})
+    for claim in neutral_claims:
+        claims.append({"claim": claim, "label": label_map["neutral"], "label_name": "neutral"})
     return claims
 
 
-def create_example(profile: Dict[str, str], encounter_id: int) -> Dict[str, object]:
+def create_example(profile: Dict[str, str], encounter_id: int, label_schema: str) -> Dict[str, object]:
     return {
         "example_id": f"encounter-{encounter_id:04d}",
         "dialogue": build_dialogue(profile, encounter_id),
         "summary": build_summary(profile),
-        "claims": build_claims(profile),
+        "claims": build_claims(profile, label_schema=label_schema),
         "metadata": {
             "specialty": profile["specialty"],
             "condition": profile["condition"],
@@ -140,12 +155,16 @@ def main() -> None:
     parser.add_argument("--val-size", type=int, default=6)
     parser.add_argument("--test-size", type=int, default=6)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--label-schema", choices=("binary", "nli"), default="nli")
     args = parser.parse_args()
 
     random.seed(args.seed)
     total_size = args.train_size + args.val_size + args.test_size
     profiles = [random.choice(PATIENT_PROFILES) for _ in range(total_size)]
-    examples = [create_example(profile, index + 1) for index, profile in enumerate(profiles)]
+    examples = [
+        create_example(profile, index + 1, label_schema=args.label_schema)
+        for index, profile in enumerate(profiles)
+    ]
 
     train_end = args.train_size
     val_end = train_end + args.val_size
@@ -159,6 +178,7 @@ def main() -> None:
         "val_size": args.val_size,
         "test_size": args.test_size,
         "seed": args.seed,
+        "label_schema": args.label_schema,
     }
     (args.output_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2),

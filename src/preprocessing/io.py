@@ -56,6 +56,7 @@ def build_verifier_rows(examples: List[Dict[str, object]]) -> List[Dict[str, obj
                     "dialogue": example["dialogue"],
                     "claim": claim["claim"],
                     "label": claim["label"],
+                    "label_name": claim.get("label_name"),
                 }
             )
     return rows
