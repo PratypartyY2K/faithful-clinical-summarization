@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare summarization and verifier datasets from synthetic raw data."""
+"""Prepare summarization and verifier datasets from raw clinical examples."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from src.preprocessing.io import process_dataset_split
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-dir", type=Path, default=Path("data/dummy/raw"))
-    parser.add_argument("--output-dir", type=Path, default=Path("data/dummy/processed"))
+    parser.add_argument("--input-dir", type=Path, default=Path("data/mimiciii/raw"))
+    parser.add_argument("--output-dir", type=Path, default=Path("data/mimiciii/processed"))
     args = parser.parse_args()
 
     for split in ("train", "validation", "test"):

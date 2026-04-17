@@ -1,5 +1,5 @@
 {
-  "data_dir": "data/dummy/processed/summarization",
+  "data_dir": "data/mimiciii/processed/summarization",
   "model_name": "google/flan-t5-small",
   "output_dir": "artifacts/summarizer/flan_t5_small",
   "trainer_type": "seq2seq",

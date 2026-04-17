@@ -2,10 +2,11 @@
 
 These JSON presets can be passed to the main scripts with `--config`.
 
-## Data
+All bundled presets now assume your official data lives under `data/mimiciii/...`.
+
+## Prepare datasets
 
 ```bash
-python3 scripts/create_dummy_dataset.py --config configs/data/dummy_nli.json
 python3 scripts/prepare_datasets.py
 ```
 

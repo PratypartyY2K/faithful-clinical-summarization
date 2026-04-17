@@ -32,7 +32,7 @@ from src.utils.metadata import build_run_metadata, write_json
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-dir", type=Path, default=Path("data/dummy/processed/summarization"))
+    parser.add_argument("--data-dir", type=Path, default=Path("data/mimiciii/processed/summarization"))
     parser.add_argument("--model-name", default="google/flan-t5-small")
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/summarizer"))
     parser.add_argument("--trainer-type", choices=("seq2seq", "causal"), default="seq2seq")

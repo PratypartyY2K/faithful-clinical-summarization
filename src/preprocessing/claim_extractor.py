@@ -1,4 +1,4 @@
-"""Heuristic claim extraction for synthetic and future clinical summaries."""
+"""Heuristic claim extraction for clinical summaries."""
 
 from __future__ import annotations
 

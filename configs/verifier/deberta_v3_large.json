@@ -1,5 +1,5 @@
 {
-  "data_dir": "data/dummy/processed/verifier",
+  "data_dir": "data/mimiciii/processed/verifier",
   "model_name": "microsoft/deberta-v3-large",
   "output_dir": "artifacts/verifier/deberta_v3_large",
   "max_length": 512,

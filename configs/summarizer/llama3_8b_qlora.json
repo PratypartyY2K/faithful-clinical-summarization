@@ -1,5 +1,5 @@
 {
-  "data_dir": "data/dummy/processed/summarization",
+  "data_dir": "data/mimiciii/processed/summarization",
   "model_name": "meta-llama/Meta-Llama-3-8B-Instruct",
   "output_dir": "artifacts/summarizer/llama3_8b_qlora",
   "trainer_type": "causal",

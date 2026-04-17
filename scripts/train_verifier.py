@@ -52,7 +52,7 @@ def infer_label_mapping(dataset) -> tuple[dict[int, str], dict[str, int]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-dir", type=Path, default=Path("data/dummy/processed/verifier"))
+    parser.add_argument("--data-dir", type=Path, default=Path("data/mimiciii/processed/verifier"))
     parser.add_argument("--model-name", default="microsoft/deberta-v3-large")
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/verifier"))
     parser.add_argument("--max-length", type=int, default=512)

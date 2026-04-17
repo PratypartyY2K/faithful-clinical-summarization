@@ -15,7 +15,7 @@ from src.utils.metadata import build_run_metadata
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-file", type=Path, default=Path("data/dummy/raw/test.jsonl"))
+    parser.add_argument("--input-file", type=Path, default=Path("data/mimiciii/raw/test.jsonl"))
     parser.add_argument("--summarizer-dir", type=Path, default=Path("artifacts/summarizer"))
     parser.add_argument("--verifier-dir", type=Path, default=Path("artifacts/verifier"))
     parser.add_argument("--max-new-tokens", type=int, default=96)

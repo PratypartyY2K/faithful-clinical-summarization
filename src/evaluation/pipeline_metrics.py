@@ -1,4 +1,4 @@
-"""Evaluation utilities for the synthetic faithful summarization pipeline."""
+"""Evaluation utilities for the faithful clinical summarization pipeline."""
 
 from __future__ import annotations
 
@@ -147,17 +147,17 @@ def evaluate_verifier_dataset(
 
 def classify_error_category(claim: str) -> str:
     normalized = claim.lower()
-    if any(keyword in normalized for keyword in ("mg", "daily", "nightly", "twice", "dose", "puffs")):
+    if any(keyword in normalized for keyword in ("mg", "mcg", "daily", "nightly", "twice", "dose", "tablet", "capsule", "units")):
         return "dosage_or_frequency"
-    if any(keyword in normalized for keyword in ("metformin", "lisinopril", "atorvastatin", "nitrofurantoin", "sumatriptan", "albuterol")):
+    if any(keyword in normalized for keyword in ("medication", "drug", "prescribed", "started", "stopped", "continued")):
         return "medication"
-    if any(keyword in normalized for keyword in ("a1c", "ldl", "urinalysis", "blood pressure", "oxygen saturation", "exam")):
+    if any(keyword in normalized for keyword in ("lab", "exam", "imaging", "scan", "x-ray", "mri", "ct", "blood pressure", "heart rate", "oxygen saturation")):
         return "lab_or_finding"
     if any(keyword in normalized for keyword in ("follow up", "repeat", "log", "review", "return if")):
         return "follow_up"
-    if any(keyword in normalized for keyword in ("diabetes", "hypertension", "asthma", "migraine", "infection", "hyperlipidemia")):
+    if any(keyword in normalized for keyword in ("diagnosis", "history of", "assessment", "impression", "syndrome", "disease", "infection")):
         return "diagnosis"
-    if any(keyword in normalized for keyword in ("fatigue", "headache", "wheezing", "burning", "symptom", "nausea")):
+    if any(keyword in normalized for keyword in ("pain", "fever", "nausea", "vomiting", "headache", "fatigue", "cough", "shortness of breath", "symptom")):
         return "symptom"
     return "other"
 

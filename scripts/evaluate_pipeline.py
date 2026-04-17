@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate the synthetic faithful summarization pipeline on the test split."""
+"""Evaluate the faithful summarization pipeline on the test split."""
 
 from __future__ import annotations
 
@@ -15,11 +15,11 @@ from src.utils.metadata import build_run_metadata, write_json
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--raw-test-file", type=Path, default=Path("data/dummy/raw/test.jsonl"))
+    parser.add_argument("--raw-test-file", type=Path, default=Path("data/mimiciii/raw/test.jsonl"))
     parser.add_argument(
         "--verifier-test-file",
         type=Path,
-        default=Path("data/dummy/processed/verifier/test.jsonl"),
+        default=Path("data/mimiciii/processed/verifier/test.jsonl"),
     )
     parser.add_argument("--summarizer-dir", type=Path, default=Path("artifacts/summarizer"))
     parser.add_argument("--verifier-dir", type=Path, default=Path("artifacts/verifier"))
