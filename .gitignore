@@ -3,6 +3,7 @@ data/
 *.csv
 *.jsonl
 *.parquet
+*.csv.gz
 
 # Model weights and checkpoints
 *.bin
