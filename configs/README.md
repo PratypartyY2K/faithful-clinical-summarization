@@ -7,6 +7,7 @@ All bundled presets now assume your official data lives under `data/mimiciii/...
 ## Prepare datasets
 
 ```bash
+python3 scripts/ingest_mimiciii_notes.py
 python3 scripts/prepare_datasets.py
 ```
 

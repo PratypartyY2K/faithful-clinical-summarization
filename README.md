@@ -59,6 +59,9 @@ data/mimiciii/processed/
 `scripts/prepare_datasets.py`
 Transforms raw clinical examples into task-specific splits under `data/mimiciii/processed/`.
 
+`scripts/ingest_mimiciii_notes.py`
+Reads `NOTEEVENTS.csv`, extracts structured discharge-summary source/target pairs, and writes `data/mimiciii/raw/`.
+
 `scripts/train_summarizer.py`
 Trains a summarizer from `data/mimiciii/processed/summarization/`.
 
@@ -78,6 +81,7 @@ All main scripts support `--config <json-file>`. Presets are stored under `confi
 Prepare processed splits:
 
 ```bash
+python3 scripts/ingest_mimiciii_notes.py
 python3 scripts/prepare_datasets.py
 ```
 
@@ -114,6 +118,7 @@ Additional preset notes are in [configs/README.md](configs/README.md).
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python3 scripts/ingest_mimiciii_notes.py
 python3 scripts/prepare_datasets.py
 python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_small.json
 python3 scripts/train_verifier.py --config configs/verifier/deberta_v3_large.json
@@ -132,6 +137,7 @@ These tests cover:
 - config loading
 - claim extraction behavior
 - evaluation summary helpers
+- MIMIC-III discharge-summary ingestion
 
 ## Expected Outputs
 
@@ -141,6 +147,8 @@ Depending on the configured paths, artifact directories may include:
 - `run_metadata.json`
 - `evaluation_report.json`
 - `evaluation_run_metadata.json`
+
+The ingestion step currently creates summarization-ready examples with `claims: []`. That is sufficient for summarizer training. Verifier training still needs a separate claim-labeling step.
 
 ## Limitations
 
