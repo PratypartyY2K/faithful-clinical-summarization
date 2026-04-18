@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config.cli import parse_args_with_optional_config
 from src.evaluation.pipeline_metrics import run_full_evaluation, write_evaluation_report

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,8 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config.cli import parse_args_with_optional_config
 from src.utils.metadata import build_run_metadata, write_json
