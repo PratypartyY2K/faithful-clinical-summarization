@@ -11,6 +11,16 @@ INLINE_HEADING_PATTERN = re.compile(r"^\s*([A-Za-z][A-Za-z /-]{1,80}):\s*(.*)$")
 UPPERCASE_HEADING_PATTERN = re.compile(r"^[A-Z][A-Z /-]{1,80}$")
 NON_ALPHANUMERIC_RUN_PATTERN = re.compile(r"[_*=-]{3,}")
 WHITESPACE_PATTERN = re.compile(r"\s+")
+DEIDENTIFIED_SPAN_PATTERN = re.compile(r"\[\*\*.*?\*\*\]")
+DICTATION_METADATA_PATTERN = re.compile(
+    r"(dictated by:|medquist|job#:|d:\s|\bt:\s|md number|telephone/fax)",
+    re.IGNORECASE,
+)
+ENUMERATED_LIST_PATTERN = re.compile(r"(?:^|\s)\d+\.\s+")
+SIGNATURE_ARTIFACT_PATTERN = re.compile(
+    r"\bdr\.\s*,?\s*(?:\d{1,3}-\d{1,3})?\b|\bm\.d\.\b",
+    re.IGNORECASE,
+)
 
 SOURCE_SECTION_CANDIDATES = (
     "chief complaint",
@@ -34,10 +44,6 @@ TARGET_SECTION_CANDIDATES = (
     "final diagnoses",
     "discharge condition",
     "discharge disposition",
-    "discharge medications",
-    "discharge medictions",
-    "medications on discharge",
-    "discharge instructions",
     "follow-up plans",
     "follow up plans",
     "followup instructions",
@@ -51,6 +57,33 @@ def normalize_whitespace(text: str) -> str:
 def normalize_section_name(name: str) -> str:
     cleaned = normalize_whitespace(name).strip(":")
     return cleaned.lower()
+
+
+def strip_deidentified_spans(text: str) -> str:
+    return DEIDENTIFIED_SPAN_PATTERN.sub(" ", text)
+
+
+def strip_trailing_dictation_metadata(text: str) -> str:
+    lines: List[str] = []
+    for raw_line in text.splitlines():
+        if DICTATION_METADATA_PATTERN.search(raw_line):
+            break
+        lines.append(raw_line)
+    return "\n".join(lines)
+
+
+def clean_note_text(text: str) -> str:
+    cleaned = strip_deidentified_spans(text.replace("\x00", " "))
+    cleaned = strip_trailing_dictation_metadata(cleaned)
+    cleaned = cleaned.replace("..", ".")
+    return cleaned
+
+
+def clean_section_text(text: str) -> str:
+    cleaned = SIGNATURE_ARTIFACT_PATTERN.sub(" ", text)
+    cleaned = re.sub(r"\s+,", ",", cleaned)
+    cleaned = re.sub(r"\s+\.", ".", cleaned)
+    return normalize_whitespace(cleaned)
 
 
 def is_heading_line(line: str) -> bool:
@@ -67,7 +100,7 @@ def parse_note_sections(text: str) -> Dict[str, str]:
     current_section = "preamble"
     sections[current_section] = []
 
-    for raw_line in text.splitlines():
+    for raw_line in clean_note_text(text).splitlines():
         line = raw_line.strip()
         if not line:
             continue
@@ -90,10 +123,24 @@ def parse_note_sections(text: str) -> Dict[str, str]:
         sections.setdefault(current_section, []).append(line)
 
     return {
-        name: normalize_whitespace(" ".join(lines))
+        name: clean_section_text(" ".join(lines))
         for name, lines in sections.items()
-        if normalize_whitespace(" ".join(lines))
+        if clean_section_text(" ".join(lines))
     }
+
+
+def is_target_section_usable(name: str, text: str) -> bool:
+    normalized_name = normalize_section_name(name)
+    normalized_text = normalize_whitespace(text).lower()
+    if not normalized_text:
+        return False
+    if normalized_name in {"discharge medications", "discharge medictions", "medications on discharge", "discharge instructions"}:
+        return False
+    if normalized_text.startswith("please return to the office"):
+        return False
+    if ENUMERATED_LIST_PATTERN.search(text) and len(text) > 600:
+        return False
+    return True
 
 
 def collect_sections(sections: Dict[str, str], section_names: Iterable[str]) -> Tuple[str, List[str]]:
@@ -102,6 +149,17 @@ def collect_sections(sections: Dict[str, str], section_names: Iterable[str]) -> 
     for name in section_names:
         value = sections.get(name)
         if value:
+            collected_names.append(name)
+            collected_text.append(value)
+    return "\n\n".join(collected_text), collected_names
+
+
+def collect_target_sections(sections: Dict[str, str], section_names: Iterable[str]) -> Tuple[str, List[str]]:
+    collected_names: List[str] = []
+    collected_text: List[str] = []
+    for name in section_names:
+        value = sections.get(name)
+        if value and is_target_section_usable(name, value):
             collected_names.append(name)
             collected_text.append(value)
     return "\n\n".join(collected_text), collected_names
@@ -128,7 +186,7 @@ def build_raw_example(
 
     sections = parse_note_sections(text)
     source_text, source_sections = collect_sections(sections, SOURCE_SECTION_CANDIDATES)
-    target_text, target_sections = collect_sections(sections, TARGET_SECTION_CANDIDATES)
+    target_text, target_sections = collect_target_sections(sections, TARGET_SECTION_CANDIDATES)
 
     if len(source_text) < min_source_chars or len(target_text) < min_target_chars:
         return None

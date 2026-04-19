@@ -30,6 +30,43 @@ class MIMICIIIIngestionTest(unittest.TestCase):
         self.assertEqual(sections["brief hospital course"], "Required intubation and ICU stay.")
         self.assertEqual(sections["discharge medications"], "Albuterol inhaler.")
 
+    def test_build_raw_example_removes_deidentification_and_skips_medication_targets(self) -> None:
+        row = {
+            "SUBJECT_ID": "10",
+            "HADM_ID": "20",
+            "CHARTDATE": "2118-06-14",
+            "CATEGORY": "Discharge summary",
+            "DESCRIPTION": "Report",
+            "TEXT": """
+            HISTORY OF PRESENT ILLNESS:
+            Patient presented to [**Hospital1 18**] with progressive dyspnea and worsening cough.
+            She had severe wheezing and increasing oxygen requirements prior to admission.
+
+            BRIEF HOSPITAL COURSE:
+            Treated with steroids, bronchodilators, and oxygen with gradual improvement.
+
+            DISCHARGE MEDICATIONS:
+            1. Albuterol inhaler.
+            2. Prednisone taper.
+
+            FOLLOW-UP PLANS:
+            Follow up with pulmonology in one week.
+
+            Dictated By: Someone
+            JOB#: 1234
+            """,
+        }
+
+        example = build_raw_example(row, min_source_chars=20, min_target_chars=20)
+
+        self.assertIsNotNone(example)
+        assert example is not None
+        self.assertNotIn("[**", str(example["dialogue"]))
+        self.assertNotIn("[**", str(example["summary"]))
+        self.assertNotIn("dictated by", str(example["summary"]).lower())
+        self.assertEqual(example["metadata"]["target_sections"], ["brief hospital course", "follow-up plans"])
+        self.assertNotIn("albuterol", str(example["summary"]).lower())
+
     def test_build_raw_example_extracts_source_and_target_sections(self) -> None:
         row = {
             "SUBJECT_ID": "13702",
@@ -70,6 +107,7 @@ class MIMICIIIIngestionTest(unittest.TestCase):
         self.assertIn("treated for copd exacerbation", str(example["summary"]).lower())
         self.assertEqual(example["metadata"]["source_sections"][0], "history of present illness")
         self.assertIn("brief hospital course", example["metadata"]["target_sections"])
+        self.assertNotIn("levofloxacin", str(example["summary"]).lower())
 
 
 if __name__ == "__main__":
