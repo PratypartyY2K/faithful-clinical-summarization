@@ -125,8 +125,9 @@ def build_seq2seq_trainer(dataset, tokenizer, args: argparse.Namespace):
     model = configure_peft(model, args, TaskType.SEQ_2_SEQ_LM)
 
     def preprocess(batch):
+        prompts = [build_summary_prompt(str(input_text)) for input_text in batch["input_text"]]
         inputs = tokenizer(
-            batch["input_text"],
+            prompts,
             max_length=args.max_source_length,
             truncation=True,
         )
