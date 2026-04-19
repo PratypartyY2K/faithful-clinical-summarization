@@ -17,6 +17,12 @@ python3 scripts/prepare_datasets.py
 python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_small.json
 ```
 
+## flan-t5-base baseline
+
+```bash
+python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_base.json
+```
+
 ## Llama-3-8B QLoRA run
 
 ```bash
