@@ -48,6 +48,23 @@ TARGET_SECTION_CANDIDATES = (
     "follow up plans",
     "followup instructions",
 )
+NARRATIVE_TARGET_SECTION_NAMES = {"brief hospital course"}
+SHORT_STATUS_VALUES = {
+    "good",
+    "fair",
+    "stable",
+    "improved",
+    "guarded",
+    "expired",
+    "deceased",
+    "home",
+    "none",
+    "n/a",
+    "not applicable",
+    "extended care",
+    "rehabilitation",
+    "to rehabilitation",
+}
 
 
 def normalize_whitespace(text: str) -> str:
@@ -143,6 +160,22 @@ def is_target_section_usable(name: str, text: str) -> bool:
     return True
 
 
+def looks_like_narrative_summary(text: str) -> bool:
+    normalized = normalize_whitespace(text).lower().strip(" .")
+    if not normalized:
+        return False
+    if normalized in SHORT_STATUS_VALUES:
+        return False
+    if "\n\n" not in text and len(normalized.split()) < 12:
+        return False
+    sentence_count = sum(text.count(mark) for mark in ".!?")
+    if sentence_count >= 2:
+        return True
+    if len(normalized.split()) >= 25 and not ENUMERATED_LIST_PATTERN.search(text):
+        return True
+    return False
+
+
 def collect_sections(sections: Dict[str, str], section_names: Iterable[str]) -> Tuple[str, List[str]]:
     collected_names: List[str] = []
     collected_text: List[str] = []
@@ -155,14 +188,26 @@ def collect_sections(sections: Dict[str, str], section_names: Iterable[str]) -> 
 
 
 def collect_target_sections(sections: Dict[str, str], section_names: Iterable[str]) -> Tuple[str, List[str]]:
-    collected_names: List[str] = []
-    collected_text: List[str] = []
-    for name in section_names:
+    preferred_names = [name for name in section_names if normalize_section_name(name) in NARRATIVE_TARGET_SECTION_NAMES]
+    preferred_text: List[str] = []
+    preferred_sections: List[str] = []
+    for name in preferred_names:
         value = sections.get(name)
-        if value and is_target_section_usable(name, value):
-            collected_names.append(name)
-            collected_text.append(value)
-    return "\n\n".join(collected_text), collected_names
+        if value and is_target_section_usable(name, value) and looks_like_narrative_summary(value):
+            preferred_sections.append(name)
+            preferred_text.append(value)
+
+    if preferred_text:
+        for name in section_names:
+            normalized_name = normalize_section_name(name)
+            if normalized_name in NARRATIVE_TARGET_SECTION_NAMES:
+                continue
+            value = sections.get(name)
+            if value and is_target_section_usable(name, value) and looks_like_narrative_summary(value):
+                preferred_sections.append(name)
+                preferred_text.append(value)
+        return "\n\n".join(preferred_text), preferred_sections
+    return "", []
 
 
 def stable_split_name(identifier: str, train_fraction: float, validation_fraction: float) -> str:

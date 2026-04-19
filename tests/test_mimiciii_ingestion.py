@@ -43,7 +43,8 @@ class MIMICIIIIngestionTest(unittest.TestCase):
             She had severe wheezing and increasing oxygen requirements prior to admission.
 
             BRIEF HOSPITAL COURSE:
-            Treated with steroids, bronchodilators, and oxygen with gradual improvement.
+            Treated with steroids, bronchodilators, and oxygen with gradual improvement over several days.
+            Respiratory status stabilized and the patient was discharged after successful weaning from supplemental support.
 
             DISCHARGE MEDICATIONS:
             1. Albuterol inhaler.
@@ -64,8 +65,32 @@ class MIMICIIIIngestionTest(unittest.TestCase):
         self.assertNotIn("[**", str(example["dialogue"]))
         self.assertNotIn("[**", str(example["summary"]))
         self.assertNotIn("dictated by", str(example["summary"]).lower())
-        self.assertEqual(example["metadata"]["target_sections"], ["brief hospital course", "follow-up plans"])
+        self.assertEqual(example["metadata"]["target_sections"], ["brief hospital course"])
         self.assertNotIn("albuterol", str(example["summary"]).lower())
+
+    def test_build_raw_example_rejects_terse_status_only_targets(self) -> None:
+        row = {
+            "SUBJECT_ID": "11",
+            "HADM_ID": "21",
+            "CHARTDATE": "2118-06-14",
+            "CATEGORY": "Discharge summary",
+            "DESCRIPTION": "Report",
+            "TEXT": """
+            HISTORY OF PRESENT ILLNESS:
+            Patient presented with chest pain and dyspnea requiring hospital admission for evaluation.
+            The symptoms were severe enough to require urgent inpatient monitoring and treatment.
+
+            DISCHARGE CONDITION:
+            Good
+
+            DISCHARGE DISPOSITION:
+            Home
+            """,
+        }
+
+        example = build_raw_example(row, min_source_chars=20, min_target_chars=20)
+
+        self.assertIsNone(example)
 
     def test_build_raw_example_extracts_source_and_target_sections(self) -> None:
         row = {
@@ -88,6 +113,7 @@ class MIMICIIIIngestionTest(unittest.TestCase):
             BRIEF HOSPITAL COURSE:
             Treated for COPD exacerbation with steroids, bronchodilators, antibiotics,
             and later intubation for respiratory failure before eventual extubation.
+            She improved steadily after ICU management and was discharged once breathing returned closer to baseline.
 
             DISCHARGE MEDICATIONS:
             Levothyroxine, citalopram, aspirin, inhalers, and levofloxacin.
@@ -106,7 +132,7 @@ class MIMICIIIIngestionTest(unittest.TestCase):
         self.assertIn("progressive dyspnea", str(example["dialogue"]).lower())
         self.assertIn("treated for copd exacerbation", str(example["summary"]).lower())
         self.assertEqual(example["metadata"]["source_sections"][0], "history of present illness")
-        self.assertIn("brief hospital course", example["metadata"]["target_sections"])
+        self.assertEqual(example["metadata"]["target_sections"], ["brief hospital course"])
         self.assertNotIn("levofloxacin", str(example["summary"]).lower())
 
 
