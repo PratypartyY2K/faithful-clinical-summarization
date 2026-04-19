@@ -35,6 +35,12 @@ python3 scripts/train_verifier.py --config configs/verifier/deberta_v3_large.jso
 python3 scripts/evaluate_pipeline.py --config configs/evaluation/full_pipeline.json
 ```
 
+## Summarizer-only evaluation
+
+```bash
+python3 scripts/evaluate_summarizer.py --summarizer-dir artifacts/summarizer/flan_t5_small
+```
+
 ## Full evaluation with LLM claim extraction
 
 Requires `OPENAI_API_KEY`.

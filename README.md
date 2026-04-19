@@ -65,6 +65,9 @@ Reads `NOTEEVENTS.csv`, extracts structured discharge-summary source/target pair
 `scripts/train_summarizer.py`
 Trains a summarizer from `data/mimiciii/processed/summarization/`.
 
+`scripts/evaluate_summarizer.py`
+Runs summarizer-only generation and overlap evaluation without requiring a verifier.
+
 `scripts/train_verifier.py`
 Trains a claim verifier from `data/mimiciii/processed/verifier/`.
 
@@ -101,6 +104,12 @@ Run end-to-end evaluation:
 
 ```bash
 python3 scripts/evaluate_pipeline.py --config configs/evaluation/full_pipeline.json
+```
+
+Run summarizer-only evaluation:
+
+```bash
+python3 scripts/evaluate_summarizer.py --summarizer-dir artifacts/summarizer/flan_t5_small
 ```
 
 Run evaluation with LLM-based claim extraction:
@@ -149,6 +158,8 @@ Depending on the configured paths, artifact directories may include:
 - `evaluation_run_metadata.json`
 
 The ingestion step currently creates summarization-ready examples with `claims: []`. That is sufficient for summarizer training. Verifier training still needs a separate claim-labeling step.
+
+For the initial MIMIC-III summarizer, the ingestion defaults intentionally exclude discharge medication and instruction sections from the target summary because they introduce long boilerplate lists that degraded generation quality.
 
 ## Limitations
 
