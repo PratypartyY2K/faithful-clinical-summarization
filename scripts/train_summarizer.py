@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List
@@ -33,6 +34,9 @@ from src.modeling.pipeline import build_summary_prompt, generate_summaries_batch
 from src.utils.metadata import build_run_metadata, write_json
 
 
+CHECKPOINT_PATTERN = re.compile(r"checkpoint-(\d+)$")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=Path("data/mimiciii/processed/summarization"))
@@ -56,6 +60,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--generation-batch-size", type=int, default=4)
     parser.add_argument("--max-new-tokens", type=int, default=128)
+    parser.add_argument("--save-strategy", choices=("no", "epoch", "steps"), default="steps")
+    parser.add_argument("--save-steps", type=int, default=200)
+    parser.add_argument("--save-total-limit", type=int, default=2)
+    parser.add_argument("--eval-strategy", choices=("no", "epoch", "steps"), default="epoch")
+    parser.add_argument("--eval-steps", type=int, default=None)
+    parser.add_argument("--logging-steps", type=int, default=5)
+    parser.add_argument("--resume-from-checkpoint", default=None)
+    parser.add_argument("--auto-resume", action="store_true")
     args = parse_args_with_optional_config(parser)
     if args.use_qlora and not args.use_peft:
         raise ValueError("--use-qlora requires --use-peft.")
@@ -118,6 +130,27 @@ def configure_peft(model, args: argparse.Namespace, task_type: TaskType):
     return model
 
 
+def resolve_resume_checkpoint(args: argparse.Namespace) -> str | None:
+    if args.resume_from_checkpoint:
+        return str(args.resume_from_checkpoint)
+    if not args.auto_resume:
+        return None
+    output_dir = Path(args.output_dir)
+    if not output_dir.exists():
+        return None
+    checkpoints = []
+    for child in output_dir.iterdir():
+        if not child.is_dir():
+            continue
+        match = CHECKPOINT_PATTERN.fullmatch(child.name)
+        if match:
+            checkpoints.append((int(match.group(1)), child))
+    if not checkpoints:
+        return None
+    checkpoints.sort(key=lambda item: item[0])
+    return str(checkpoints[-1][1])
+
+
 def build_seq2seq_trainer(dataset, tokenizer, args: argparse.Namespace):
     model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name)
     if hasattr(model.config, "tie_word_embeddings"):
@@ -142,22 +175,26 @@ def build_seq2seq_trainer(dataset, tokenizer, args: argparse.Namespace):
     tokenized = dataset.map(preprocess, batched=True, remove_columns=dataset["train"].column_names)
     training_kwargs = {
         "output_dir": str(args.output_dir),
-        "save_strategy": "epoch",
+        "save_strategy": args.save_strategy,
         "learning_rate": args.learning_rate,
         "per_device_train_batch_size": args.per_device_train_batch_size,
         "per_device_eval_batch_size": args.per_device_eval_batch_size,
         "num_train_epochs": args.num_train_epochs,
         "predict_with_generate": True,
-        "logging_steps": 5,
+        "logging_steps": args.logging_steps,
         "report_to": "none",
         "load_best_model_at_end": False,
+        "save_steps": args.save_steps,
+        "save_total_limit": args.save_total_limit,
     }
-    strategy_arg = (
+    eval_strategy_arg = (
         "eval_strategy"
         if "eval_strategy" in inspect.signature(Seq2SeqTrainingArguments.__init__).parameters
         else "evaluation_strategy"
     )
-    training_kwargs[strategy_arg] = "epoch"
+    training_kwargs[eval_strategy_arg] = args.eval_strategy
+    if args.eval_steps is not None:
+        training_kwargs["eval_steps"] = args.eval_steps
     training_args = Seq2SeqTrainingArguments(**training_kwargs)
     trainer_kwargs = {
         "model": model,
@@ -211,21 +248,25 @@ def build_causal_trainer(dataset, tokenizer, args: argparse.Namespace):
     tokenized = dataset.map(preprocess, batched=True, remove_columns=dataset["train"].column_names)
     training_kwargs = {
         "output_dir": str(args.output_dir),
-        "save_strategy": "epoch",
+        "save_strategy": args.save_strategy,
         "learning_rate": args.learning_rate,
         "per_device_train_batch_size": args.per_device_train_batch_size,
         "per_device_eval_batch_size": args.per_device_eval_batch_size,
         "num_train_epochs": args.num_train_epochs,
-        "logging_steps": 5,
+        "logging_steps": args.logging_steps,
         "report_to": "none",
         "fp16": torch.cuda.is_available(),
+        "save_steps": args.save_steps,
+        "save_total_limit": args.save_total_limit,
     }
-    strategy_arg = (
+    eval_strategy_arg = (
         "eval_strategy"
         if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters
         else "evaluation_strategy"
     )
-    training_kwargs[strategy_arg] = "epoch"
+    training_kwargs[eval_strategy_arg] = args.eval_strategy
+    if args.eval_steps is not None:
+        training_kwargs["eval_steps"] = args.eval_steps
     training_args = TrainingArguments(**training_kwargs)
     trainer_kwargs = {
         "model": model,
@@ -268,7 +309,10 @@ def main() -> None:
     else:
         trainer = build_causal_trainer(dataset, tokenizer, args)
 
-    trainer.train()
+    resume_checkpoint = resolve_resume_checkpoint(args)
+    if resume_checkpoint:
+        print(f"Resuming training from checkpoint: {resume_checkpoint}")
+    trainer.train(resume_from_checkpoint=resume_checkpoint)
     trainer.save_model(str(args.output_dir))
     tokenizer.save_pretrained(str(args.output_dir))
     generation_metrics = evaluate_generation(dataset, tokenizer, trainer.model, args)
@@ -283,6 +327,7 @@ def main() -> None:
                 "metrics_file": metrics_path,
                 "train_examples": len(dataset["train"]),
                 "validation_examples": len(dataset["validation"]),
+                "resume_checkpoint": resume_checkpoint,
             },
         ),
     )
