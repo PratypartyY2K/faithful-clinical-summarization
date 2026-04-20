@@ -1,0 +1,17 @@
+{
+  "stage": "summarizer_evaluation",
+  "created_at_utc": "2026-04-20T16:09:01+00:00",
+  "args": {
+    "input_file": "data/mimiciii/raw/test.jsonl",
+    "summarizer_dir": "artifacts/summarizer/mistral_7b_qlora_smoke",
+    "output_dir": "artifacts/evaluation/summarizer",
+    "max_new_tokens": 128,
+    "batch_size": 4,
+    "limit": 20,
+    "config": null
+  },
+  "extra": {
+    "num_examples": 20,
+    "predictions_file": "artifacts/evaluation/summarizer/predictions.jsonl"
+  }
+}
