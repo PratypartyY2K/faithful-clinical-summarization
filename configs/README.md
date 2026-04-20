@@ -2,61 +2,64 @@
 
 These JSON presets can be passed to the main scripts with `--config`.
 
-All bundled presets now assume your official data lives under `data/mimiciii/...`.
+All bundled presets assume official data lives under `data/mimiciii/...`.
 
-## Prepare datasets
+## Recommended Workflow
+
+Prepare processed splits:
 
 ```bash
 python3 scripts/ingest_mimiciii_notes.py
 python3 scripts/prepare_datasets.py
 ```
 
-## flan-t5-small baseline
+Train the recommended Mistral QLoRA summarizer:
 
 ```bash
-python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_small.json
+python3 scripts/train_summarizer.py \
+  --config configs/summarizer/llama3_8b_qlora.json \
+  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
+  --output-dir artifacts/summarizer/mistral_7b_qlora
 ```
 
-## flan-t5-base baseline
+Run summarizer-only evaluation:
 
 ```bash
-python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_base.json
+python3 scripts/evaluate_summarizer.py \
+  --summarizer-dir artifacts/summarizer/mistral_7b_qlora
 ```
 
-## flan-t5-base long-source smoke test
+## Smoke Test Workflow
+
+Run a smaller ingestion job before a longer training run:
 
 ```bash
-python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_base_long_source.json
+python3 scripts/ingest_mimiciii_notes.py --max-examples 1000
+python3 scripts/prepare_datasets.py
+python3 scripts/train_summarizer.py \
+  --config configs/summarizer/llama3_8b_qlora.json \
+  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
+  --output-dir artifacts/summarizer/mistral_7b_qlora_smoke
+python3 scripts/evaluate_summarizer.py \
+  --input-file data/mimiciii/raw/test.jsonl \
+  --summarizer-dir artifacts/summarizer/mistral_7b_qlora_smoke \
+  --limit 20
 ```
 
-## Llama-3-8B QLoRA run
+## Short-Target Debug Workflow
+
+Create shortened targets for overfit/debug checks:
 
 ```bash
-python3 scripts/train_summarizer.py --config configs/summarizer/llama3_8b_qlora.json
+python3 scripts/prepare_datasets.py --target-sentence-limit 2
 ```
 
-## DeBERTa-v3-large verifier
+Then train and evaluate with the same Mistral QLoRA command, pointing at a separate output directory if needed.
 
-```bash
-python3 scripts/train_verifier.py --config configs/verifier/deberta_v3_large.json
-```
+## Other Presets
 
-## Full evaluation run
+Some older summarizer configs and verifier/evaluation presets remain in the repository for experiment history and future work. They are not the primary documented workflow for the current project because:
 
-```bash
-python3 scripts/evaluate_pipeline.py --config configs/evaluation/full_pipeline.json
-```
-
-## Summarizer-only evaluation
-
-```bash
-python3 scripts/evaluate_summarizer.py --summarizer-dir artifacts/summarizer/flan_t5_small
-```
-
-## Full evaluation with LLM claim extraction
-
-Requires `OPENAI_API_KEY`.
-
-```bash
-python3 scripts/evaluate_pipeline.py --config configs/evaluation/full_pipeline_llm_claims.json
-```
+- the current MIMIC ingestion pipeline does not yet generate claim labels
+- verifier splits are therefore empty by design
+- earlier seq2seq baselines are no longer the recommended path

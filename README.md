@@ -3,7 +3,7 @@
 This repository is now set up for the official MIMIC-III workflow. The synthetic bootstrap dataset and its helper code have been removed.
 
 The current codebase supports:
-- summarization training with a seq2seq baseline or optional PEFT/QLoRA causal LM path
+- summarization training with a PEFT/QLoRA causal LM path
 - MIMIC-III discharge-summary ingestion from `NOTEEVENTS.csv`
 - summarizer-only evaluation with ROUGE and BERTScore
 - optional short-target debug preprocessing for overfit checks
@@ -72,7 +72,7 @@ data/mimiciii/processed/
 
 1. Ingest MIMIC-III discharge summaries from `NOTEEVENTS.csv` into raw JSONL splits.
 2. Convert raw examples into processed summarization splits.
-3. Train either a seq2seq baseline or a PEFT/QLoRA causal summarizer.
+3. Train a PEFT/QLoRA causal summarizer.
 4. Evaluate summarizer generations with ROUGE and BERTScore.
 5. Add claim-labeling and verifier training later to enable full faithfulness evaluation.
 
@@ -114,34 +114,40 @@ python3 scripts/ingest_mimiciii_notes.py
 python3 scripts/prepare_datasets.py
 ```
 
-Train the `flan-t5-small` baseline:
+Train the recommended Mistral QLoRA summarizer:
 
 ```bash
-python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_small.json
-```
-
-Train the `flan-t5-base` baseline:
-
-```bash
-python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_base.json
-```
-
-Train the longer-source `flan-t5-base` baseline:
-
-```bash
-python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_base_long_source.json
+python3 scripts/train_summarizer.py \
+  --config configs/summarizer/llama3_8b_qlora.json \
+  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
+  --output-dir artifacts/summarizer/mistral_7b_qlora
 ```
 
 Run summarizer-only evaluation on raw test examples:
 
 ```bash
-python3 scripts/evaluate_summarizer.py --summarizer-dir artifacts/summarizer/flan_t5_base_long_source
+python3 scripts/evaluate_summarizer.py --summarizer-dir artifacts/summarizer/mistral_7b_qlora
 ```
 
 Prepare a short-target debug dataset for overfit checks:
 
 ```bash
 python3 scripts/prepare_datasets.py --target-sentence-limit 2
+```
+
+For a smoke run on a small subset before scaling up:
+
+```bash
+python3 scripts/ingest_mimiciii_notes.py --max-examples 1000
+python3 scripts/prepare_datasets.py
+python3 scripts/train_summarizer.py \
+  --config configs/summarizer/llama3_8b_qlora.json \
+  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
+  --output-dir artifacts/summarizer/mistral_7b_qlora_smoke
+python3 scripts/evaluate_summarizer.py \
+  --input-file data/mimiciii/raw/test.jsonl \
+  --summarizer-dir artifacts/summarizer/mistral_7b_qlora_smoke \
+  --limit 20
 ```
 
 Verifier and full pipeline commands remain available in the codebase, but they are not currently active on MIMIC data because the verifier splits are empty. When a claim-labeling stage exists, the verifier flow will look like:
@@ -161,8 +167,11 @@ source .venv/bin/activate
 pip install -r requirements.txt
 python3 scripts/ingest_mimiciii_notes.py
 python3 scripts/prepare_datasets.py
-python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_base_long_source.json
-python3 scripts/evaluate_summarizer.py --summarizer-dir artifacts/summarizer/flan_t5_base_long_source
+python3 scripts/train_summarizer.py \
+  --config configs/summarizer/llama3_8b_qlora.json \
+  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
+  --output-dir artifacts/summarizer/mistral_7b_qlora
+python3 scripts/evaluate_summarizer.py --summarizer-dir artifacts/summarizer/mistral_7b_qlora
 ```
 
 ## Testing
@@ -196,11 +205,13 @@ For the initial MIMIC-III summarizer, the ingestion defaults intentionally exclu
 
 For overfit/debug runs, `scripts/prepare_datasets.py --target-sentence-limit N` can create shortened summarization targets while preserving the full original target in `target_text_full`.
 
+Older seq2seq baselines remain in the repository for experiment history, but they are not the recommended path for the current project workflow.
+
 ## Limitations
 
 - The current atomic claim extractor is heuristic, not parser-based or model-based.
 - An optional OpenAI-backed claim extractor is available, but it requires API access and adds runtime cost.
 - The FactScore-style metric here is an engineering proxy built from claim support predictions, not a full reproduction of the original FActScore framework.
 - Model downloads require internet access the first time they are used.
-- The Llama-3 QLoRA path assumes a CUDA-capable environment.
+- The recommended Mistral QLoRA path assumes a CUDA-capable environment.
 - The current verifier and end-to-end faithfulness evaluation path are not yet active on MIMIC-III because claim annotations are not generated during ingestion.
