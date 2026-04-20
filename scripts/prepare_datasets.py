@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.config.cli import parse_args_with_optional_config
 from src.preprocessing.io import process_dataset_split
 
 
@@ -16,10 +17,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-dir", type=Path, default=Path("data/mimiciii/raw"))
     parser.add_argument("--output-dir", type=Path, default=Path("data/mimiciii/processed"))
-    args = parser.parse_args()
+    parser.add_argument(
+        "--target-sentence-limit",
+        type=int,
+        default=None,
+        help="Optionally keep only the first N sentences of the summarization target.",
+    )
+    args = parse_args_with_optional_config(parser)
 
     for split in ("train", "validation", "test"):
-        process_dataset_split(args.input_dir, args.output_dir, split)
+        process_dataset_split(
+            args.input_dir,
+            args.output_dir,
+            split,
+            target_sentence_limit=args.target_sentence_limit,
+        )
 
     print(f"Prepared datasets under {args.output_dir}")
 
