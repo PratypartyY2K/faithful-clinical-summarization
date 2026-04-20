@@ -13,6 +13,7 @@ from transformers import (
     AutoTokenizer,
 )
 
+from src.modeling.tokenizer_utils import configure_generation_tokenizer
 from src.preprocessing.claim_extractor import extract_claims
 
 
@@ -70,6 +71,7 @@ def load_summarizer(model_dir: Path) -> SummarizerBundle:
             model = AutoModelForSeq2SeqLM.from_pretrained(str(model_dir))
         except (ValueError, OSError):
             model = AutoModelForCausalLM.from_pretrained(str(model_dir))
+    tokenizer = configure_generation_tokenizer(tokenizer, model)
     return tokenizer, model
 
 
@@ -87,6 +89,7 @@ def generate_summary(
 ) -> str:
     prompt = build_summary_prompt(dialogue)
     device = get_model_device(summarizer_model)
+    summarizer_model.eval()
     encoded = summarizer_tokenizer(prompt, return_tensors="pt", truncation=True)
     encoded = {key: value.to(device) for key, value in encoded.items()}
     with torch.no_grad():
@@ -109,6 +112,7 @@ def generate_summaries_batch(
     prompts = [build_summary_prompt(dialogue) for dialogue in dialogues]
     outputs: List[str] = []
     device = get_model_device(summarizer_model)
+    summarizer_model.eval()
     for start in range(0, len(prompts), batch_size):
         batch_prompts = prompts[start : start + batch_size]
         encoded = summarizer_tokenizer(
