@@ -127,10 +127,10 @@ def generate_summaries_batch(
         if getattr(summarizer_model.config, "is_encoder_decoder", False):
             decoded_batch = summarizer_tokenizer.batch_decode(generated, skip_special_tokens=True)
         else:
-            prompt_lengths = encoded["attention_mask"].sum(dim=1).tolist()
+            input_length = encoded["input_ids"].shape[-1]
             decoded_batch = []
-            for row_index, row in enumerate(generated):
-                decoded_tokens = row[int(prompt_lengths[row_index]) :]
+            for row in generated:
+                decoded_tokens = row[int(input_length) :]
                 decoded_batch.append(
                     summarizer_tokenizer.decode(decoded_tokens, skip_special_tokens=True).strip()
                 )
