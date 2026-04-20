@@ -25,16 +25,11 @@ SIGNATURE_ARTIFACT_PATTERN = re.compile(
 SOURCE_SECTION_CANDIDATES = (
     "chief complaint",
     "history of present illness",
-    "past medical history",
-    "past surgical history",
-    "social history",
-    "family history",
     "physical exam",
     "pertinent results",
     "pertinent laboratory data",
     "labs on admission",
     "admission labs",
-    "hospital course",
 )
 
 TARGET_SECTION_CANDIDATES = (
@@ -198,14 +193,6 @@ def collect_target_sections(sections: Dict[str, str], section_names: Iterable[st
             preferred_text.append(value)
 
     if preferred_text:
-        for name in section_names:
-            normalized_name = normalize_section_name(name)
-            if normalized_name in NARRATIVE_TARGET_SECTION_NAMES:
-                continue
-            value = sections.get(name)
-            if value and is_target_section_usable(name, value) and looks_like_narrative_summary(value):
-                preferred_sections.append(name)
-                preferred_text.append(value)
         return "\n\n".join(preferred_text), preferred_sections
     return "", []
 

@@ -67,6 +67,7 @@ class MIMICIIIIngestionTest(unittest.TestCase):
         self.assertNotIn("dictated by", str(example["summary"]).lower())
         self.assertEqual(example["metadata"]["target_sections"], ["brief hospital course"])
         self.assertNotIn("albuterol", str(example["summary"]).lower())
+        self.assertNotIn("follow up with pulmonology", str(example["summary"]).lower())
 
     def test_build_raw_example_rejects_terse_status_only_targets(self) -> None:
         row = {
@@ -132,6 +133,7 @@ class MIMICIIIIngestionTest(unittest.TestCase):
         self.assertIn("progressive dyspnea", str(example["dialogue"]).lower())
         self.assertIn("treated for copd exacerbation", str(example["summary"]).lower())
         self.assertEqual(example["metadata"]["source_sections"][0], "history of present illness")
+        self.assertNotIn("past medical history", example["metadata"]["source_sections"])
         self.assertEqual(example["metadata"]["target_sections"], ["brief hospital course"])
         self.assertNotIn("levofloxacin", str(example["summary"]).lower())
 

@@ -23,6 +23,12 @@ python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_small.js
 python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_base.json
 ```
 
+## flan-t5-base long-source smoke test
+
+```bash
+python3 scripts/train_summarizer.py --config configs/summarizer/flan_t5_base_long_source.json
+```
+
 ## Llama-3-8B QLoRA run
 
 ```bash
