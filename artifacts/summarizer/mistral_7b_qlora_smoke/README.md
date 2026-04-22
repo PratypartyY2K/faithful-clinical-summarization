@@ -30,6 +30,13 @@ The current project workflow is:
 
 This adapter was created during the Mistral QLoRA migration after earlier seq2seq baselines were found to be inadequate for the current task formulation.
 
+It is useful for:
+- confirming that the causal QLoRA path works end to end
+- quick regression checks after preprocessing or generation changes
+- verifying that evaluation still runs before launching a full-data training job
+
+It is not the current best model for reporting final project results.
+
 ## Files
 
 - `adapter_model.safetensors`: LoRA adapter weights
@@ -40,5 +47,6 @@ This adapter was created during the Mistral QLoRA migration after earlier seq2se
 ## Notes
 
 - This is an intermediate experiment artifact.
+- The smoke run was mainly a pipeline-validation checkpoint, not a quality-optimized model.
 - The model card metadata here is intentionally brief and local to this repository.
 - For the current project status and recommended commands, see the top-level [README.md](../../../README.md).

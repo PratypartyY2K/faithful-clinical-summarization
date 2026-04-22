@@ -1,0 +1,198 @@
+\pdfoutput=1
+\documentclass[11pt]{article}
+
+\usepackage{acl}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{enumitem}
+
+\title{Faithful Clinical Summarization via Atomic Claim Verification:\\Current Implementation Report}
+
+\author{Pratyush Kumar \\
+  The Pennsylvania State University \\
+  {\tt pratyushkumar@psu.edu}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This report describes the current implementation status of a project on faithful clinical summarization using MIMIC-III discharge summaries. The original project goal was to move beyond pure overlap-based summarization and build an end-to-end generate-then-verify pipeline in which a summarizer produces a clinical summary, the summary is decomposed into atomic claims, and a verifier predicts whether each claim is supported by the source record. The present codebase implements the data ingestion pipeline for MIMIC-III discharge summaries, a preprocessing stage for summarization and verifier splits, multiple summarizer training configurations, summarizer-only evaluation with ROUGE and BERTScore, heuristic atomic claim extraction, an optional OpenAI-backed claim extractor, and pipeline evaluation scaffolding for future faithfulness experiments. The repository also includes a verifier training script and full-pipeline evaluation utilities, but these components are not yet active on the MIMIC workflow because the ingestion stage currently writes empty claim annotations, leaving verifier datasets empty by design. Empirically, the repository contains a smoke-run evaluation of a QLoRA fine-tuned instruct model on 20 held-out examples, with ROUGE-1 of 0.2691, ROUGE-2 of 0.1147, ROUGE-L of 0.1934, and BERTScore F1 of 0.8441. The main contribution of the implemented system is therefore an operational summarizer-first clinical summarization pipeline and a partially implemented framework for later faithfulness analysis. This report documents the implemented components, the experimental evidence currently available, the design choices made so far, and the remaining work required to realize the full claim-verification objective.
+\end{abstract}
+
+\section{Introduction}
+
+Clinical summarization is the task of converting long and often noisy clinical documentation into a concise narrative that captures the patient trajectory, major diagnoses, interventions, and outcome. In this project, the concrete task is hospital-course style summarization from discharge-summary notes derived from MIMIC-III. The input is a structured but messy clinical note containing sections such as \textit{History of Present Illness}, \textit{Physical Exam}, and \textit{Pertinent Results}. The output is a shorter narrative summary, ideally similar in style to the clinician-authored \textit{Brief Hospital Course} section. In practical terms, the system receives source note text and generates a concise hospital-course summary.
+
+This task is important because clinical notes are long, redundant, and expensive for humans to read and write. Discharge documentation in particular is time-consuming and contributes to administrative burden. Prior work has therefore studied hospital-course summarization and discharge-note generation as a clinically meaningful NLP task \cite{adams2021hospitalcourse, landes2023dsprov, wu2024epfl, he2024shimo, liu2024csiro}. However, in medicine, a fluent summary is not enough. A system can achieve reasonable overlap metrics while still hallucinating unsupported diagnoses, medications, dosages, or follow-up instructions. That makes faithfulness central, not optional.
+
+The motivating research question for this project is: can clinical summarization be evaluated and eventually improved using atomic claim verification instead of relying only on lexical overlap metrics such as ROUGE? The intended pipeline combines summarization with a second faithfulness stage. After summary generation, the system extracts independent factual claims from the generated text and scores each claim against the source document with a verifier. This design is inspired by work on factuality in summarization \cite{maynez2020faithfulness, kryscinski2020evaluating, feng2023factkb, scire2024fenice} and adapted to the clinical domain, where unsupported facts are especially costly.
+
+Success for the project would mean more than training a generator. A successful final system would: (1) generate clinical summaries from MIMIC-derived inputs, (2) produce interpretable claim-level faithfulness evidence, and (3) support aggregate reporting such as claim support rate, contradiction rate, and representative failure cases. At the current stage, the repository reaches the first goal and partially implements the second and third goals in code, but not yet in a fully operational end-to-end pipeline on MIMIC-III.
+
+\paragraph{Summary of contributions.}
+\begin{itemize}[leftmargin=*]
+    \item Implemented a working MIMIC-III summarizer-first pipeline, including discharge-summary ingestion, dataset preparation, summarizer training, and summarizer-only evaluation.
+    \item Implemented reusable infrastructure for faithfulness analysis, including heuristic and optional LLM-based atomic claim extraction, verifier training utilities, and aggregate pipeline-evaluation helpers.
+    \item Identified the current blocking gap for end-to-end faithful summarization: the repository does not yet generate claim-level labels for MIMIC examples, so verifier datasets are empty and full pipeline evaluation remains scaffolded rather than active.
+\end{itemize}
+
+\section{Related Work}
+
+The project sits at the intersection of abstractive summarization, clinical summarization, and factuality evaluation. Modern abstractive summarization systems are largely built on encoder-decoder or decoder-only Transformers \cite{vaswani2017attention}. Strong general summarization backbones include BART \cite{lewis2020bart}, PEGASUS \cite{zhang2020pegasus}, and T5 \cite{raffel2020exploring}. These models established the standard paradigm of fine-tuning pretrained language models for summarization.
+
+At the same time, summarization research has repeatedly shown that good overlap metrics do not guarantee factual correctness. \citet{maynez2020faithfulness} demonstrated that abstractive summaries often contain hallucinations even when they score well on ROUGE. \citet{kryscinski2020evaluating} studied factual consistency evaluation and helped motivate reference-free factuality checking. More recent work has proposed stronger automatic factuality metrics, including FactKB \cite{feng2023factkb} and FENICE \cite{scire2024fenice}. These works are relevant because the present project similarly aims to decompose a summary into checkable units and measure support from the source.
+
+Clinical summarization introduces additional challenges beyond news summarization. Inputs are much longer, contain semi-structured sections, exhibit copy-paste artifacts, and mix narrative text with lists, medication fields, and boilerplate. \citet{adams2021hospitalcourse} formalized hospital-course summarization at scale and showed that the task is highly abstractive and clinically challenging. \citet{landes2023dsprov} further analyzed discharge summarization from a data provenance perspective and emphasized that source-target alignment in clinical notes can itself be noisy and incomplete.
+
+Shared-task systems from recent BioNLP work illustrate the range of approaches in this area. \citet{wu2024epfl} built a Meditron-based discharge summarization system with context extension and information selection. \citet{he2024shimo} used prompt-driven section concatenation and LoRA fine-tuning for discharge summarization. \citet{liu2024csiro} explored fine-tuned open-source language models with varying context formulations for discharge-summary section generation. Work on adjacent clinical summarization tasks, such as progress note summarization \cite{liu2023deakin}, shows that both rule-based and neural approaches remain relevant depending on data quality and target structure.
+
+The data side also matters. MIMIC-III remains one of the most widely used clinical corpora \cite{johnson2016mimic}. It provides realistic EHR notes but demands careful preprocessing because the notes are de-identified, irregularly formatted, and not directly packaged as source-summary pairs. Some related clinical resources focus on extraction rather than generation; for example, CLIP targets discharge action-item extraction \cite{mullenbach2021clip}. These datasets reinforce the point that summarization-related information in clinical notes is often distributed across sections and sub-tasks rather than neatly localized.
+
+From a modeling perspective, this project also borrows from efficient adaptation methods. LoRA \cite{hu2022lora} and QLoRA \cite{dettmers2023qlora} make it more practical to fine-tune larger instruction-following models for summarization. This is reflected in the repository, which includes both seq2seq baselines and a PEFT/QLoRA causal language model path.
+
+Overall, the literature suggests three design principles that directly shaped the current implementation. First, pretrained text generation models are a strong foundation for clinical summarization. Second, factuality needs dedicated evaluation beyond overlap metrics. Third, interpretable fact-level analysis is especially valuable in medicine. The implemented repository follows these principles, but only the first is fully operational at present; the second and third are partially implemented and still awaiting claim-labeled data.
+
+\section{Data}
+
+The implemented pipeline uses MIMIC-III discharge summaries as its primary data source \cite{johnson2016mimic}. Rather than assuming an already prepared summarization dataset, the repository constructs examples from raw \texttt{NOTEEVENTS.csv}. This is one of the stronger aspects of the implementation because it makes the dataset creation process explicit and reproducible.
+
+The ingestion script reads rows from the discharge-summary category and filters out error rows. It then parses note text into section-level structure. The parser handles inline headings, uppercase headings, de-identification spans, and trailing dictation metadata. After normalization, the code collects source sections from clinically relevant fields such as \textit{Chief Complaint}, \textit{History of Present Illness}, \textit{Physical Exam}, and \textit{Pertinent Results}. The target summary is taken conservatively from narrative sections such as \textit{Brief Hospital Course}. The implementation intentionally excludes highly structured or boilerplate-heavy sections such as discharge medications and discharge instructions, because those harmed summary quality in earlier experiments and are difficult to model as clean narrative targets.
+
+This choice produces examples whose \texttt{dialogue} field is the source clinical context and whose \texttt{summary} field is a clinician-authored narrative target. Each raw example also contains metadata such as subject ID, hospital admission ID, chart date, source section names, and target section names. Data splits are assigned deterministically using a hash-based stable split function, which reduces leakage across reruns.
+
+After raw example creation, a second preprocessing stage writes task-specific splits under \texttt{data/mimiciii/processed/}. For summarization, the processed examples contain \texttt{input\_text} and \texttt{target\_text}. The pipeline also supports optional target shortening for debugging via \texttt{--target-sentence-limit}, which is useful for overfit checks. In addition, the preprocessing step includes heuristics for cleaner narrative-only targets, minimum and maximum target lengths, minimum sentence count, and a limit on structured markers.
+
+The verifier dataset path is also implemented structurally, but not populated in the current MIMIC workflow. During ingestion, every raw example is written with \texttt{claims: []}. As a result, processed verifier splits are empty by design. This is the central limitation of the present data pipeline. The codebase expects verifier examples to contain a claim and a label, and it can train a verifier if such data exists. What is missing is the intermediate claim-label generation stage that would transform raw source-summary pairs into supervised claim-verification examples.
+
+Table~\ref{tab:impldata} summarizes the data status from an implementation perspective.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{@{}p{0.29\linewidth}p{0.18\linewidth}p{0.43\linewidth}@{}}
+\toprule
+Component & Status & Notes \\ \midrule
+MIMIC-III raw ingestion & Implemented & Reads \texttt{NOTEEVENTS.csv}, filters discharge summaries, parses sections, writes JSONL splits. \\
+Summarization splits & Implemented & Creates train/validation/test JSONL files for generation. \\
+Narrative target filtering & Implemented & Excludes medication and instruction boilerplate. \\
+Verifier splits & Not populated & Schema exists, but current raw examples contain empty claim lists. \\
+Claim-labeled supervision & Missing & Needed to activate verifier training on MIMIC. \\ \bottomrule
+\end{tabular}
+\caption{Status of the current data pipeline.}
+\label{tab:impldata}
+\end{table}
+
+The dataset choice is appropriate for the project goals because it matches the target use case: summarizing hospitalization trajectories into concise discharge-style narratives. However, the current preprocessing logic also narrows the task. The system is effectively training on a curated narrative subset of discharge documentation rather than on the full discharge note. That is a reasonable engineering tradeoff for a first implementation, but it should be stated clearly in the report.
+
+\section{Model}
+
+The repository implements two summarizer families. The first is a seq2seq path built with \texttt{AutoModelForSeq2SeqLM}, intended for models such as FLAN-T5 \cite{raffel2020exploring}. The second is a causal language model path built with \texttt{AutoModelForCausalLM}, optionally augmented with PEFT and QLoRA \cite{hu2022lora, dettmers2023qlora}. This second path is the more important one in the current repository, because the README explicitly frames the project as a summarizer-first MIMIC pipeline with a PEFT/QLoRA causal LM route.
+
+All summarizer variants use the same prompt template. The model is instructed to act as a clinical documentation assistant and to write a concise faithful summary grounded only in the source dialogue. For seq2seq models, the prompt is tokenized as the source and the target summary is encoded as labels. For causal models, the prompt tokens are concatenated with target tokens, and prompt positions are masked in the loss. This means the implementation supports both encoder-decoder and instruction-tuned decoder-only summarizers with a shared prompting interface.
+
+The configuration files include FLAN-T5-small, FLAN-T5-base, FLAN-T5-base with longer source length, and a QLoRA configuration for an 8B instruction-tuned causal model. The code also contains saved artifacts for a smoke-run summarizer under \texttt{artifacts/summarizer/mistral\_7b\_qlora\_smoke}, suggesting that a Mistral-style instruct model has already been tested in practice even though the current JSON config file is named after Llama-3. More broadly, the code is flexible enough to train different generator backbones as long as the tokenizer and architecture are compatible with the chosen trainer type.
+
+The verifier model is implemented as a sequence-classification model over dialogue-claim pairs. It uses \texttt{AutoModelForSequenceClassification} and tokenizes the source dialogue and a candidate claim together, with a default configuration targeting DeBERTa-v3-large. The verifier training code supports either a three-way label space (\textit{contradiction}, \textit{neutral}, \textit{entailment}) or a binary supported/unsupported setup, depending on the data. This is a sensible design because it can support both a stricter NLI interpretation and a simpler factuality check.
+
+To bridge generation and verification, the repository implements atomic claim extraction. There are two backends. The first is a heuristic splitter that segments summaries into claims using sentence boundaries, certain conjunction patterns, and simple normalization rules. The second is an optional OpenAI-backed extractor that prompts an LLM to return independent medical facts in JSON form. This claim extraction component is important because it operationalizes the project's notion of faithfulness: the summary is not judged as a whole, but as a set of checkable atomic statements.
+
+In short, the model side of the project is conceptually stronger than the current experimental evidence. The architecture for a generate-then-verify system exists. What is fully active today is the summarizer; what is partially implemented but blocked on data is the verifier-enabled faithfulness pipeline.
+
+\section{Experimental Setup}
+
+\subsection{Evaluation Metrics}
+
+The active evaluation script for the current pipeline is summarizer-only evaluation. It generates summaries for held-out examples and computes ROUGE and BERTScore. ROUGE remains a standard lexical-overlap metric for summarization, while BERTScore better captures semantic similarity through contextual embeddings \cite{zhang2020bertscore}. These metrics are useful for tracking generation quality, especially in early-stage experiments, but they do not directly measure factual faithfulness.
+
+The repository therefore also includes code for several fact-oriented metrics at the pipeline level. Once claim extraction and verification are active, the evaluation module can compute average claim support rate, contradiction rate, neutral-or-unsupported rate, and a FactScore-style aggregate derived from claim support predictions. It also supports qualitative error summaries that categorize unsupported claims into buckets such as medication, dosage, diagnosis, symptom, and follow-up. This design makes the intended evaluation framework richer and more interpretable than ROUGE alone.
+
+At present, however, only the overlap metrics are backed by actual run artifacts on MIMIC data. The faithfulness metrics exist in code but do not yet have corresponding verifier predictions on non-empty MIMIC verifier splits.
+
+\subsection{Implementation Details}
+
+The repository is implemented in Python with Hugging Face \texttt{transformers}, \texttt{datasets}, \texttt{peft}, and the \texttt{evaluate} library. The summarizer trainer supports configurable source length, target length, learning rate, batch sizes, epoch count, checkpoint saving, and automatic resume. For the causal LM path, the code can enable 4-bit quantization with NF4 and double quantization for QLoRA training. For generation, the evaluation script exposes decoding parameters such as beam width, no-repeat n-gram size, repetition penalty, and length penalty.
+
+Several implementation choices are worth noting because they reflect engineering decisions already made:
+\begin{itemize}[leftmargin=*]
+    \item The summarizer prompt explicitly instructs the model to remain grounded in the source note.
+    \item The tokenizer setup handles both encoder-decoder and decoder-only models.
+    \item The MIMIC ingestion stage uses conservative target selection to avoid list-heavy targets.
+    \item The evaluation code can read either raw examples or processed summarization rows, which makes experimentation more flexible.
+    \item The repository includes 19 lightweight unit tests covering config loading, claim extraction, ingestion behavior, evaluation helpers, preprocessing logic, and summarizer evaluation schema handling.
+\end{itemize}
+
+Running the current test suite with \texttt{python3 -m unittest discover -s tests -p 'test\_*.py'} succeeds, which provides evidence that the implemented infrastructure is at least internally consistent.
+
+\section{Results and Analysis}
+
+The strongest empirical evidence currently available in the repository comes from summarizer-only smoke evaluation. Two saved evaluation directories report metrics on 20 test examples generated by the smoke-run summarizer. The better of the two recorded runs, stored under \texttt{artifacts/evaluation/summarizer/mistral\_7b\_qlora\_smoke\_eval}, reports ROUGE-1 of 0.2691, ROUGE-2 of 0.1147, ROUGE-L of 0.1934, ROUGE-Lsum of 0.1930, and BERTScore F1 of 0.8441. Another recorded evaluation on the same 20-example setting reports slightly lower scores, with ROUGE-1 of 0.2543 and BERTScore F1 of 0.8149. The run metadata indicates that these were limited smoke evaluations rather than full test-set experiments.
+
+Table~\ref{tab:results} summarizes the recorded numbers.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Metric & Smoke Eval A & Smoke Eval B \\ \midrule
+ROUGE-1 & 0.2543 & 0.2691 \\
+ROUGE-2 & 0.0853 & 0.1147 \\
+ROUGE-L & 0.1518 & 0.1934 \\
+ROUGE-Lsum & 0.1718 & 0.1930 \\
+BERTScore F1 & 0.8149 & 0.8441 \\ \bottomrule
+\end{tabular}
+\caption{Recorded summarizer-only smoke evaluation metrics on 20 examples from repository artifacts.}
+\label{tab:results}
+\end{table}
+
+These results should be interpreted carefully. First, they are not full-scale test-set results, so they should be presented as smoke-run evidence rather than definitive benchmark performance. Second, they evaluate only generation quality under overlap and semantic similarity metrics. They do not tell us whether the model hallucinated clinically important details. Third, there is not yet a direct baseline comparison table in the repository between FLAN-T5 and the QLoRA causal model, even though the code supports such comparisons. The current artifact evidence is therefore enough to show that the training-and-evaluation path works, but not enough to support strong performance claims.
+
+Even with those caveats, several qualitative conclusions are reasonable. The repository has moved past a purely conceptual stage. It can ingest data, train a summarizer, load the saved model, generate summaries, and produce evaluation files. That is meaningful implementation progress. In contrast, the verifier side remains pre-operational on the current MIMIC workflow. Although the code can train a verifier, score claims, and produce pipeline-level reports, those capabilities depend on claim-labeled examples that do not yet exist in the MIMIC preprocessing output.
+
+Another useful result from the repository is not numerical but architectural: the project has already clarified what the bottleneck is. The problem is not the absence of evaluation utilities or inference glue code. The missing piece is a claim-labeling pipeline. Concretely, the following gap prevents end-to-end faithfulness experiments:
+\begin{itemize}[leftmargin=*]
+    \item raw MIMIC examples contain empty claim lists,
+    \item processed verifier splits are therefore empty,
+    \item the verifier cannot be meaningfully trained on MIMIC data, and
+    \item full pipeline evaluation cannot produce trustworthy faithfulness metrics.
+\end{itemize}
+
+This is an important project outcome in itself. It narrows the future work from a vague goal of ``improving faithfulness'' to a concrete engineering requirement: generate claim annotations and supervision for verifier training.
+
+\section{What Is Left To Implement}
+
+This section should be stated explicitly in the final report, because the project is best described as a partial implementation of a faithful summarization pipeline rather than a completed end-to-end faithfulness system.
+
+\paragraph{1. Claim-label generation for MIMIC examples.}
+This is the main missing component. The repository needs a stage that takes either reference summaries, generated summaries, or both; extracts atomic claims; and assigns support labels with respect to the source note. These labels could come from manual annotation, distant supervision, synthetic perturbation, LLM-assisted labeling, or a hybrid process. Without this, the verifier remains disconnected from the active MIMIC pipeline.
+
+\paragraph{2. Non-empty verifier training and evaluation splits.}
+Once claim-label generation exists, the preprocessing pipeline must write populated verifier examples containing \texttt{dialogue}, \texttt{claim}, \texttt{label}, and optionally \texttt{label\_name}. Only then can the DeBERTa verifier path be trained and evaluated.
+
+\paragraph{3. End-to-end generate-and-verify experiments.}
+The repository already contains \texttt{run\_pipeline.py} and \texttt{evaluate\_pipeline.py}, but these should be treated as scaffolding until the verifier can be trained on real MIMIC-derived claims. A complete experiment would compare summarizer outputs under both overlap metrics and claim-level faithfulness metrics.
+
+\paragraph{4. Stronger experimental comparisons.}
+The code supports multiple summarizer configurations, but the repository does not yet contain a clean benchmark table comparing FLAN-T5-small, FLAN-T5-base, longer-context variants, and QLoRA causal models on the same evaluation set. That comparison should be part of the final results section if time permits.
+
+\paragraph{5. Qualitative error analysis on real unsupported claims.}
+The evaluation code can already categorize unsupported claims, but this analysis has not yet been demonstrated on real verifier-backed pipeline outputs. Once the verifier is operational, this analysis will become one of the most valuable sections of the project.
+
+\paragraph{6. Human evaluation.}
+Because clinical factuality is high stakes, an eventual human review of a subset of generated summaries would strengthen the project significantly. This is not implemented and may or may not be feasible within course scope, but it is worth mentioning as future work.
+
+\section{Conclusion}
+
+The current repository implements a substantial portion of a clinical summarization system, but not yet the full faithful summarization vision stated in the project title. The implemented portion is a solid summarizer-first MIMIC-III pipeline: it ingests discharge summaries from raw MIMIC notes, constructs source-target pairs, prepares summarization datasets, trains summarization models, evaluates generated summaries with ROUGE and BERTScore, and includes tests confirming the behavior of the main preprocessing and evaluation components. The repository also contains meaningful infrastructure for atomic-claim-based faithfulness analysis, including claim extraction, verifier training code, and end-to-end evaluation utilities.
+
+The main limitation is also clear and concrete: the current MIMIC ingestion path does not generate claim annotations, so verifier datasets are empty and the full generate-then-verify pipeline cannot yet be exercised on MIMIC-III. For that reason, the most accurate conclusion is that the project has implemented the generation side completely enough for reporting and experimentation, and has implemented the faithfulness side partially at the infrastructure level but not yet at the data level.
+
+If the final report is meant to describe \emph{what has been implemented}, it should confidently emphasize the working summarizer pipeline, the MIMIC preprocessing logic, the saved smoke-run evaluation results, and the faithfulness-oriented architecture already present in code. It should also transparently state that claim-label generation, verifier training on non-empty MIMIC data, and end-to-end faithfulness experiments remain future work. Framed that way, the report will be accurate, defensible, and aligned with the repository as it exists today.
+
+\bibliography{custom}
+\bibliographystyle{acl_natbib}
+
+\end{document}
