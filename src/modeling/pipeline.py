@@ -86,6 +86,10 @@ def generate_summary(
     summarizer_tokenizer,
     summarizer_model,
     max_new_tokens: int = 96,
+    num_beams: int = 1,
+    no_repeat_ngram_size: int = 0,
+    repetition_penalty: float = 1.0,
+    length_penalty: float = 1.0,
 ) -> str:
     prompt = build_summary_prompt(dialogue)
     device = get_model_device(summarizer_model)
@@ -93,7 +97,14 @@ def generate_summary(
     encoded = summarizer_tokenizer(prompt, return_tensors="pt", truncation=True)
     encoded = {key: value.to(device) for key, value in encoded.items()}
     with torch.no_grad():
-        generated = summarizer_model.generate(**encoded, max_new_tokens=max_new_tokens)
+        generated = summarizer_model.generate(
+            **encoded,
+            max_new_tokens=max_new_tokens,
+            num_beams=num_beams,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            repetition_penalty=repetition_penalty,
+            length_penalty=length_penalty,
+        )
     if getattr(summarizer_model.config, "is_encoder_decoder", False):
         decoded_tokens = generated[0]
     else:
@@ -108,6 +119,10 @@ def generate_summaries_batch(
     summarizer_model,
     max_new_tokens: int = 96,
     batch_size: int = 4,
+    num_beams: int = 1,
+    no_repeat_ngram_size: int = 0,
+    repetition_penalty: float = 1.0,
+    length_penalty: float = 1.0,
 ) -> List[str]:
     prompts = [build_summary_prompt(dialogue) for dialogue in dialogues]
     outputs: List[str] = []
@@ -123,7 +138,14 @@ def generate_summaries_batch(
         )
         encoded = {key: value.to(device) for key, value in encoded.items()}
         with torch.no_grad():
-            generated = summarizer_model.generate(**encoded, max_new_tokens=max_new_tokens)
+            generated = summarizer_model.generate(
+                **encoded,
+                max_new_tokens=max_new_tokens,
+                num_beams=num_beams,
+                no_repeat_ngram_size=no_repeat_ngram_size,
+                repetition_penalty=repetition_penalty,
+                length_penalty=length_penalty,
+            )
         if getattr(summarizer_model.config, "is_encoder_decoder", False):
             decoded_batch = summarizer_tokenizer.batch_decode(generated, skip_special_tokens=True)
         else:
@@ -215,12 +237,20 @@ def build_pipeline_report(
     verifier_batch_size: int = 8,
     claim_extractor_backend: str = "heuristic",
     claim_extractor_model: str = "gpt-4.1-mini",
+    num_beams: int = 1,
+    no_repeat_ngram_size: int = 0,
+    repetition_penalty: float = 1.0,
+    length_penalty: float = 1.0,
 ) -> Dict[str, object]:
     summary = generate_summary(
         dialogue=str(example["dialogue"]),
         summarizer_tokenizer=summarizer_tokenizer,
         summarizer_model=summarizer_model,
         max_new_tokens=max_new_tokens,
+        num_beams=num_beams,
+        no_repeat_ngram_size=no_repeat_ngram_size,
+        repetition_penalty=repetition_penalty,
+        length_penalty=length_penalty,
     )
     claims = extract_claims(
         summary,

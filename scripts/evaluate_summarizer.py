@@ -22,6 +22,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/evaluation/summarizer"))
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--num-beams", type=int, default=1)
+    parser.add_argument("--no-repeat-ngram-size", type=int, default=0)
+    parser.add_argument("--repetition-penalty", type=float, default=1.0)
+    parser.add_argument("--length-penalty", type=float, default=1.0)
     parser.add_argument("--limit", type=int, default=None)
     return parse_args_with_optional_config(parser)
 
@@ -67,6 +71,10 @@ def main() -> None:
         summarizer_model=model,
         max_new_tokens=args.max_new_tokens,
         batch_size=args.batch_size,
+        num_beams=args.num_beams,
+        no_repeat_ngram_size=args.no_repeat_ngram_size,
+        repetition_penalty=args.repetition_penalty,
+        length_penalty=args.length_penalty,
     )
 
     metrics = compute_text_overlap_metrics(predictions=predictions, references=references)
@@ -96,6 +104,14 @@ def main() -> None:
             extra={
                 "num_examples": len(examples),
                 "predictions_file": predictions_path,
+                "decoding": {
+                    "max_new_tokens": args.max_new_tokens,
+                    "batch_size": args.batch_size,
+                    "num_beams": args.num_beams,
+                    "no_repeat_ngram_size": args.no_repeat_ngram_size,
+                    "repetition_penalty": args.repetition_penalty,
+                    "length_penalty": args.length_penalty,
+                },
             },
         ),
     )
