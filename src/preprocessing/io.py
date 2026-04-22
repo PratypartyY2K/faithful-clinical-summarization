@@ -9,6 +9,7 @@ from typing import Dict, Iterable, List
 
 
 SENTENCE_BOUNDARY_PATTERN = re.compile(r"(?<=[.!?])\s+")
+STRUCTURED_MARKER_PATTERN = re.compile(r"(?:(?<=\s)|^)(?:#|\d+\)|\d+\.)")
 
 
 def read_jsonl(path: Path) -> List[Dict[str, object]]:
@@ -47,13 +48,63 @@ def take_first_sentences(text: str, max_sentences: int | None = None) -> str:
     return " ".join(sentences[:max_sentences]).strip()
 
 
+def count_words(text: str) -> int:
+    return len([token for token in text.strip().split() if token])
+
+
+def count_sentences(text: str) -> int:
+    return len([sentence for sentence in SENTENCE_BOUNDARY_PATTERN.split(text.strip()) if sentence.strip()])
+
+
+def count_structured_markers(text: str) -> int:
+    return len(STRUCTURED_MARKER_PATTERN.findall(text))
+
+
+def keep_narrative_target(
+    text: str,
+    narrative_only: bool = False,
+    min_target_words: int | None = None,
+    max_target_words: int | None = None,
+    min_target_sentences: int | None = None,
+    max_structured_markers: int | None = None,
+) -> bool:
+    if not narrative_only:
+        return True
+    target_words = count_words(text)
+    target_sentences = count_sentences(text)
+    structured_markers = count_structured_markers(text)
+    if min_target_words is not None and target_words < min_target_words:
+        return False
+    if max_target_words is not None and target_words > max_target_words:
+        return False
+    if min_target_sentences is not None and target_sentences < min_target_sentences:
+        return False
+    if max_structured_markers is not None and structured_markers > max_structured_markers:
+        return False
+    return True
+
+
 def build_summarization_rows(
     examples: List[Dict[str, object]],
     target_sentence_limit: int | None = None,
+    narrative_only: bool = False,
+    min_target_words: int | None = None,
+    max_target_words: int | None = None,
+    min_target_sentences: int | None = None,
+    max_structured_markers: int | None = None,
 ) -> List[Dict[str, object]]:
     rows: List[Dict[str, object]] = []
     for example in examples:
         full_target_text = str(example["summary"])
+        if not keep_narrative_target(
+            full_target_text,
+            narrative_only=narrative_only,
+            min_target_words=min_target_words,
+            max_target_words=max_target_words,
+            min_target_sentences=min_target_sentences,
+            max_structured_markers=max_structured_markers,
+        ):
+            continue
         target_text = take_first_sentences(full_target_text, max_sentences=target_sentence_limit)
         rows.append(
             {
@@ -62,6 +113,7 @@ def build_summarization_rows(
                 "target_text": target_text,
                 "target_text_full": full_target_text,
                 "target_sentence_limit": target_sentence_limit,
+                "narrative_only": narrative_only,
             }
         )
     return rows
@@ -88,11 +140,24 @@ def process_dataset_split(
     output_dir: Path,
     split: str,
     target_sentence_limit: int | None = None,
+    narrative_only: bool = False,
+    min_target_words: int | None = None,
+    max_target_words: int | None = None,
+    min_target_sentences: int | None = None,
+    max_structured_markers: int | None = None,
 ) -> None:
     examples = read_jsonl(input_dir / f"{split}.jsonl")
     write_jsonl(
         output_dir / "summarization" / f"{split}.jsonl",
-        build_summarization_rows(examples, target_sentence_limit=target_sentence_limit),
+        build_summarization_rows(
+            examples,
+            target_sentence_limit=target_sentence_limit,
+            narrative_only=narrative_only,
+            min_target_words=min_target_words,
+            max_target_words=max_target_words,
+            min_target_sentences=min_target_sentences,
+            max_structured_markers=max_structured_markers,
+        ),
     )
     write_jsonl(
         output_dir / "verifier" / f"{split}.jsonl",

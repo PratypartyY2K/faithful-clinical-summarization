@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from src.preprocessing.io import build_summarization_rows, take_first_sentences
+from src.preprocessing.io import build_summarization_rows, keep_narrative_target, take_first_sentences
 
 
 class PreprocessingIOTest(unittest.TestCase):
@@ -29,6 +29,43 @@ class PreprocessingIOTest(unittest.TestCase):
         self.assertEqual(rows[0]["target_text"], "Sentence one. Sentence two.")
         self.assertEqual(rows[0]["target_text_full"], "Sentence one. Sentence two. Sentence three.")
         self.assertEqual(rows[0]["target_sentence_limit"], 2)
+
+    def test_keep_narrative_target_rejects_structured_problem_list(self) -> None:
+        text = "# CHF: Improved. # ARF: Improved. # Pain: Controlled."
+
+        keep = keep_narrative_target(
+            text,
+            narrative_only=True,
+            min_target_words=3,
+            max_target_words=100,
+            min_target_sentences=2,
+            max_structured_markers=0,
+        )
+
+        self.assertFalse(keep)
+
+    def test_build_summarization_rows_filters_non_narrative_targets(self) -> None:
+        rows = build_summarization_rows(
+            [
+                {
+                    "example_id": "keep-me",
+                    "dialogue": "source",
+                    "summary": "Patient underwent surgery without complication. She recovered well on the floor and was discharged home.",
+                },
+                {
+                    "example_id": "drop-me",
+                    "dialogue": "source",
+                    "summary": "# CHF: Stable. # Pain: Controlled.",
+                },
+            ],
+            narrative_only=True,
+            min_target_words=5,
+            max_target_words=50,
+            min_target_sentences=2,
+            max_structured_markers=0,
+        )
+
+        self.assertEqual([row["example_id"] for row in rows], ["keep-me"])
 
 
 if __name__ == "__main__":

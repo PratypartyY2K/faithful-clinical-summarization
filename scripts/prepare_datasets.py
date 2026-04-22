@@ -23,6 +23,15 @@ def main() -> None:
         default=None,
         help="Optionally keep only the first N sentences of the summarization target.",
     )
+    parser.add_argument(
+        "--narrative-only",
+        action="store_true",
+        help="Keep only cleaner narrative summarization targets using conservative heuristics.",
+    )
+    parser.add_argument("--min-target-words", type=int, default=40)
+    parser.add_argument("--max-target-words", type=int, default=260)
+    parser.add_argument("--min-target-sentences", type=int, default=2)
+    parser.add_argument("--max-structured-markers", type=int, default=0)
     args = parse_args_with_optional_config(parser)
 
     for split in ("train", "validation", "test"):
@@ -31,6 +40,11 @@ def main() -> None:
             args.output_dir,
             split,
             target_sentence_limit=args.target_sentence_limit,
+            narrative_only=args.narrative_only,
+            min_target_words=args.min_target_words,
+            max_target_words=args.max_target_words,
+            min_target_sentences=args.min_target_sentences,
+            max_structured_markers=args.max_structured_markers,
         )
 
     print(f"Prepared datasets under {args.output_dir}")
