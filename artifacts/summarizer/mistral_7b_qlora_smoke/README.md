@@ -37,16 +37,25 @@ It is useful for:
 
 It is not the current best model for reporting final project results.
 
+Within the course-project experiment story, this artifact is best treated as:
+- a smoke baseline for pipeline validation
+- not the main quantitative result
+- not the recommended model for qualitative analysis sections
+
 ## Files
 
-- `adapter_model.safetensors`: LoRA adapter weights
 - `adapter_config.json`: PEFT adapter config
 - `tokenizer.json`, `tokenizer_config.json`, `chat_template.jinja`: tokenizer assets
-- `checkpoint-817/`: trainer checkpoint snapshot from the smoke run
+
+This checked-in directory currently contains metadata and tokenizer assets only. It does not include:
+- LoRA weight files such as `adapter_model.safetensors`
+- a merged base model
+- a trainer checkpoint directory
 
 ## Notes
 
 - This is an intermediate experiment artifact.
 - The smoke run was mainly a pipeline-validation checkpoint, not a quality-optimized model.
 - The model card metadata here is intentionally brief and local to this repository.
+- Running generation from this artifact still requires compatible model assets in your local environment.
 - For the current project status and recommended commands, see the top-level [README.md](../../../README.md).
