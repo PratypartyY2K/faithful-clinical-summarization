@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-file", type=Path, default=Path("data/mimiciii/raw/test.jsonl"))
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/evaluation/extractive_baseline"))
-    parser.add_argument("--strategy", choices=("lead"), default="lead")
+    parser.add_argument("--strategy", choices=("lead",), default="lead")
     parser.add_argument("--num-sentences", type=int, default=2)
     parser.add_argument("--limit", type=int, default=None)
     return parse_args_with_optional_config(parser)
