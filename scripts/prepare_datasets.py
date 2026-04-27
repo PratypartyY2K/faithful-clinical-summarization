@@ -32,6 +32,29 @@ def main() -> None:
     parser.add_argument("--max-target-words", type=int, default=260)
     parser.add_argument("--min-target-sentences", type=int, default=2)
     parser.add_argument("--max-structured-markers", type=int, default=0)
+    parser.add_argument(
+        "--verifier-claim-extractor-backend",
+        choices=("heuristic", "llm"),
+        default="heuristic",
+        help="Backend used to decompose reference summaries into atomic claims for verifier supervision.",
+    )
+    parser.add_argument(
+        "--verifier-claim-extractor-model",
+        default="gpt-4.1-mini",
+        help="LLM claim extractor model name when using the llm backend.",
+    )
+    parser.add_argument(
+        "--verifier-max-claims-per-example",
+        type=int,
+        default=6,
+        help="Maximum number of reference claims to keep per example for verifier supervision.",
+    )
+    parser.add_argument(
+        "--verifier-seed",
+        type=int,
+        default=13,
+        help="Random seed for cross-example neutral-claim sampling.",
+    )
     args = parse_args_with_optional_config(parser)
 
     for split in ("train", "validation", "test"):
@@ -45,6 +68,10 @@ def main() -> None:
             max_target_words=args.max_target_words,
             min_target_sentences=args.min_target_sentences,
             max_structured_markers=args.max_structured_markers,
+            verifier_claim_extractor_backend=args.verifier_claim_extractor_backend,
+            verifier_claim_extractor_model=args.verifier_claim_extractor_model,
+            verifier_max_claims_per_example=args.verifier_max_claims_per_example,
+            verifier_seed=args.verifier_seed,
         )
 
     print(f"Prepared datasets under {args.output_dir}")

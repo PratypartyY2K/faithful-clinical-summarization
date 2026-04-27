@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from src.preprocessing.io import build_summarization_rows, keep_narrative_target, take_first_sentences
+from src.preprocessing.io import (
+    build_summarization_rows,
+    build_verifier_rows,
+    keep_narrative_target,
+    take_first_sentences,
+)
 
 
 class PreprocessingIOTest(unittest.TestCase):
@@ -66,6 +71,29 @@ class PreprocessingIOTest(unittest.TestCase):
         )
 
         self.assertEqual([row["example_id"] for row in rows], ["keep-me"])
+
+    def test_build_verifier_rows_generates_nli_examples_from_reference_claims(self) -> None:
+        rows = build_verifier_rows(
+            [
+                {
+                    "example_id": "ex-1",
+                    "dialogue": "Patient improved on antibiotics and oxygen.",
+                    "summary": "Patient improved on antibiotics. Continue oxygen at discharge.",
+                },
+                {
+                    "example_id": "ex-2",
+                    "dialogue": "Hypertension remained stable during admission.",
+                    "summary": "Hypertension remained stable.",
+                },
+            ],
+            max_claims_per_example=2,
+            seed=7,
+        )
+
+        self.assertTrue(any(row["label_name"] == "entailment" for row in rows))
+        self.assertTrue(any(row["label_name"] == "contradiction" for row in rows))
+        self.assertTrue(any(row["label_name"] == "neutral" for row in rows))
+        self.assertTrue(all("claim_source" in row for row in rows))
 
 
 if __name__ == "__main__":

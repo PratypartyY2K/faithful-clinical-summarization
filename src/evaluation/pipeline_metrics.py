@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Dict, Iterable, List
 
@@ -75,6 +76,97 @@ def compute_text_overlap_metrics(predictions: List[str], references: List[str]) 
     }
 
 
+def compute_example_level_overlap_metrics(predictions: List[str], references: List[str]) -> List[Dict[str, float]]:
+    import evaluate
+
+    rouge = evaluate.load("rouge")
+    bertscore = evaluate.load("bertscore")
+    rouge1_scores: List[float] = []
+    rougeL_scores: List[float] = []
+    for prediction, reference in zip(predictions, references):
+        row_scores = rouge.compute(predictions=[prediction], references=[reference])
+        rouge1_scores.append(round(float(row_scores["rouge1"]), 4))
+        rougeL_scores.append(round(float(row_scores["rougeL"]), 4))
+    bertscore_scores = bertscore.compute(predictions=predictions, references=references, lang="en")
+    per_example = []
+    for rouge1, rougeL, bert_f1 in zip(rouge1_scores, rougeL_scores, bertscore_scores["f1"]):
+        per_example.append(
+            {
+                "rouge1": rouge1,
+                "rougeL": rougeL,
+                "bertscore_f1": round(float(bert_f1), 4),
+            }
+        )
+    return per_example
+
+
+def safe_correlation(values_a: List[float], values_b: List[float]) -> float:
+    if len(values_a) < 2 or len(values_b) < 2:
+        return 0.0
+    if len(set(values_a)) <= 1 or len(set(values_b)) <= 1:
+        return 0.0
+    mean_a = sum(values_a) / len(values_a)
+    mean_b = sum(values_b) / len(values_b)
+    numerator = sum((a - mean_a) * (b - mean_b) for a, b in zip(values_a, values_b))
+    denominator_a = math.sqrt(sum((a - mean_a) ** 2 for a in values_a))
+    denominator_b = math.sqrt(sum((b - mean_b) ** 2 for b in values_b))
+    denominator = denominator_a * denominator_b
+    if denominator == 0:
+        return 0.0
+    return round(numerator / denominator, 4)
+
+
+def build_metric_disagreement_analysis(reports: List[Dict[str, object]]) -> Dict[str, object]:
+    if not reports:
+        return {
+            "pearson_correlation": {
+                "bertscore_f1_vs_claim_support_rate": 0.0,
+                "rouge1_vs_claim_support_rate": 0.0,
+                "rougeL_vs_claim_support_rate": 0.0,
+            },
+            "high_overlap_low_support_examples": [],
+        }
+    predictions = [str(report["generated_summary"]) for report in reports]
+    references = [str(report.get("reference_summary") or "") for report in reports]
+    overlap_rows = compute_example_level_overlap_metrics(predictions=predictions, references=references)
+    enriched_reports: List[Dict[str, object]] = []
+    support_rates: List[float] = []
+    bertscores: List[float] = []
+    rouge1_scores: List[float] = []
+    rougeL_scores: List[float] = []
+    for report, overlap in zip(reports, overlap_rows):
+        support_rate = compute_claim_support_rate(report["claim_scores"])
+        support_rates.append(support_rate)
+        bertscores.append(float(overlap["bertscore_f1"]))
+        rouge1_scores.append(float(overlap["rouge1"]))
+        rougeL_scores.append(float(overlap["rougeL"]))
+        enriched_reports.append(
+            {
+                "example_id": report["example_id"],
+                "generated_summary": report["generated_summary"],
+                "reference_summary": report.get("reference_summary"),
+                "claim_support_rate": support_rate,
+                **overlap,
+            }
+        )
+    disagreement_examples = sorted(
+        [
+            row
+            for row in enriched_reports
+            if row["bertscore_f1"] >= 0.8 and row["claim_support_rate"] <= 0.5
+        ],
+        key=lambda row: (row["claim_support_rate"], -row["bertscore_f1"]),
+    )[:5]
+    return {
+        "pearson_correlation": {
+            "bertscore_f1_vs_claim_support_rate": safe_correlation(bertscores, support_rates),
+            "rouge1_vs_claim_support_rate": safe_correlation(rouge1_scores, support_rates),
+            "rougeL_vs_claim_support_rate": safe_correlation(rougeL_scores, support_rates),
+        },
+        "high_overlap_low_support_examples": disagreement_examples,
+    }
+
+
 def evaluate_generated_reports(reports: List[Dict[str, object]]) -> Dict[str, object]:
     predictions = [str(report["generated_summary"]) for report in reports]
     references = [str(report.get("reference_summary") or "") for report in reports]
@@ -99,6 +191,7 @@ def evaluate_generated_reports(reports: List[Dict[str, object]]) -> Dict[str, ob
             sum(summary["neutral_or_unsupported_rate"] for summary in label_summaries) / len(label_summaries),
             4,
         ) if label_summaries else 0.0,
+        "metric_disagreement_analysis": build_metric_disagreement_analysis(reports),
         **overlap_metrics,
     }
 
@@ -222,6 +315,7 @@ def build_evaluation_summary(
             "rouge": generation_metrics.get("rouge", {}),
             "bertscore": generation_metrics.get("bertscore", {}),
         },
+        "metric_disagreement_summary": generation_metrics.get("metric_disagreement_analysis", {}),
         "verifier_summary": verifier_metrics,
         "error_summary": qualitative_error_analysis.get("error_type_counts", {}),
     }

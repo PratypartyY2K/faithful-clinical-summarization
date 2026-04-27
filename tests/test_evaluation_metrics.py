@@ -4,6 +4,7 @@ import unittest
 
 from src.evaluation.pipeline_metrics import (
     build_evaluation_summary,
+    build_metric_disagreement_analysis,
     build_qualitative_error_analysis,
     summarize_claim_labels,
 )
@@ -54,6 +55,11 @@ class EvaluationMetricsTest(unittest.TestCase):
         )
         self.assertIn("faithfulness_summary", summary)
         self.assertEqual(summary["error_summary"]["contradiction"], 2)
+
+    def test_metric_disagreement_analysis_handles_empty_reports(self) -> None:
+        analysis = build_metric_disagreement_analysis([])
+        self.assertEqual(analysis["pearson_correlation"]["bertscore_f1_vs_claim_support_rate"], 0.0)
+        self.assertEqual(analysis["high_overlap_low_support_examples"], [])
 
 
 if __name__ == "__main__":

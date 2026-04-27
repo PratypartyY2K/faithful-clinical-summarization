@@ -11,7 +11,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config.cli import parse_args_with_optional_config
-from src.modeling.pipeline import build_pipeline_report, load_summarizer, load_verifier
 from src.preprocessing.io import read_first_jsonl_row
 from src.utils.metadata import build_run_metadata
 
@@ -27,6 +26,8 @@ def main() -> None:
     parser.add_argument("--claim-extractor-model", default="gpt-4.1-mini")
     parser.add_argument("--output-file", type=Path, default=Path("artifacts/pipeline_report.json"))
     args = parse_args_with_optional_config(parser)
+
+    from src.modeling.pipeline import build_pipeline_report, load_summarizer, load_verifier
 
     example = read_first_jsonl_row(args.input_file)
     summarizer_tokenizer, summarizer_model = load_summarizer(args.summarizer_dir)

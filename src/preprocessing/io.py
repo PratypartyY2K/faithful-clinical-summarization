@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Dict, Iterable, List
 
+from src.preprocessing.verifier_dataset import build_verifier_rows_from_examples
+
 
 SENTENCE_BOUNDARY_PATTERN = re.compile(r"(?<=[.!?])\s+")
 STRUCTURED_MARKER_PATTERN = re.compile(r"(?:(?<=\s)|^)(?:#|\d+\)|\d+\.)")
@@ -119,20 +121,20 @@ def build_summarization_rows(
     return rows
 
 
-def build_verifier_rows(examples: List[Dict[str, object]]) -> List[Dict[str, object]]:
-    rows: List[Dict[str, object]] = []
-    for example in examples:
-        for claim in example["claims"]:
-            rows.append(
-                {
-                    "example_id": example["example_id"],
-                    "dialogue": example["dialogue"],
-                    "claim": claim["claim"],
-                    "label": claim["label"],
-                    "label_name": claim.get("label_name"),
-                }
-            )
-    return rows
+def build_verifier_rows(
+    examples: List[Dict[str, object]],
+    claim_extractor_backend: str = "heuristic",
+    claim_extractor_model: str = "gpt-4.1-mini",
+    max_claims_per_example: int | None = None,
+    seed: int = 13,
+) -> List[Dict[str, object]]:
+    return build_verifier_rows_from_examples(
+        examples,
+        claim_extractor_backend=claim_extractor_backend,
+        claim_extractor_model=claim_extractor_model,
+        max_claims_per_example=max_claims_per_example,
+        seed=seed,
+    )
 
 
 def process_dataset_split(
@@ -145,6 +147,10 @@ def process_dataset_split(
     max_target_words: int | None = None,
     min_target_sentences: int | None = None,
     max_structured_markers: int | None = None,
+    verifier_claim_extractor_backend: str = "heuristic",
+    verifier_claim_extractor_model: str = "gpt-4.1-mini",
+    verifier_max_claims_per_example: int | None = None,
+    verifier_seed: int = 13,
 ) -> None:
     examples = read_jsonl(input_dir / f"{split}.jsonl")
     write_jsonl(
@@ -161,5 +167,11 @@ def process_dataset_split(
     )
     write_jsonl(
         output_dir / "verifier" / f"{split}.jsonl",
-        build_verifier_rows(examples),
+        build_verifier_rows(
+            examples,
+            claim_extractor_backend=verifier_claim_extractor_backend,
+            claim_extractor_model=verifier_claim_extractor_model,
+            max_claims_per_example=verifier_max_claims_per_example,
+            seed=verifier_seed,
+        ),
     )

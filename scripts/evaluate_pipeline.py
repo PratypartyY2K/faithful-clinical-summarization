@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config.cli import parse_args_with_optional_config
 from src.evaluation.pipeline_metrics import run_full_evaluation, write_evaluation_report
-from src.modeling.pipeline import load_summarizer, load_verifier
 from src.utils.metadata import build_run_metadata, write_json
 
 
@@ -36,6 +35,8 @@ def main() -> None:
         default=Path("artifacts/evaluation_report.json"),
     )
     args = parse_args_with_optional_config(parser)
+
+    from src.modeling.pipeline import load_summarizer, load_verifier
 
     summarizer_tokenizer, summarizer_model = load_summarizer(args.summarizer_dir)
     verifier_tokenizer, verifier_model = load_verifier(args.verifier_dir)
