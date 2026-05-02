@@ -77,7 +77,7 @@ What is currently checked in under `artifacts/summarizer/`:
 - `mistral_7b_qlora_smoke/`: a smoke-test PEFT adapter directory with tokenizer assets and adapter metadata
 
 What is not currently checked in:
-- full Mistral base-model weights
+- full Gemma base-model weights
 - a complete merged summarizer checkpoint
 - the older local `flan_t5_small` artifact directory
 
@@ -133,7 +133,7 @@ Builds summarization and verifier splits from raw examples. It also supports:
 - `--verifier-seed` for deterministic neutral-claim sampling
 
 `scripts/train_summarizer.py`
-Trains either a seq2seq baseline or a causal summarizer. The recommended path is a causal Mistral QLoRA run with checkpoint saving and auto-resume enabled.
+Trains either a seq2seq baseline or a causal summarizer. The recommended path is a causal Gemma QLoRA run with checkpoint saving and auto-resume enabled.
 
 `scripts/evaluate_summarizer.py`
 Runs summarizer-only generation and overlap evaluation. It accepts:
@@ -155,12 +155,18 @@ Runs one generate-and-verify example and returns the generated summary, extracte
 `scripts/evaluate_pipeline.py`
 Evaluates the full test pipeline and writes aggregate overlap metrics, claim-level faithfulness metrics, verifier test metrics, qualitative unsupported-claim examples, and overlap-vs-faithfulness disagreement analysis.
 
+`scripts/export_claim_annotations.py`
+Builds a CSV annotation sheet from generated summaries and extracted claims so a human reviewer can label each claim as supported, contradiction, or neutral/unsupported.
+
+`scripts/evaluate_human_annotations.py`
+Scores completed human annotation sheets against verifier predictions and overlap metrics.
+
 ## Recommended Experiments
 
 For the paper, the most relevant experiment set is:
 
 1. Summarizer baseline
-- Mistral QLoRA trained on the default processed summarization dataset
+- Gemma 3 12B QLoRA trained on the default processed summarization dataset
 
 2. Verifier model
 - DeBERTa-v3-large or a smaller verifier trained on the processed verifier dataset
@@ -197,9 +203,9 @@ python3 scripts/prepare_datasets.py \
 ```bash
 python3 scripts/train_summarizer.py \
   --data-dir data/mimiciii/processed/summarization \
-  --config configs/summarizer/llama3_8b_qlora.json \
-  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
-  --output-dir artifacts/summarizer/mistral_7b_qlora \
+  --config configs/summarizer/gemma3_12b_qlora.json \
+  --model-name google/gemma-3-12b-it \
+  --output-dir artifacts/summarizer/gemma3_12b_qlora \
   --save-strategy steps \
   --save-steps 200 \
   --save-total-limit 2 \
@@ -223,7 +229,7 @@ python3 scripts/train_verifier.py \
 python3 scripts/evaluate_pipeline.py \
   --raw-test-file data/mimiciii/raw/test.jsonl \
   --verifier-test-file data/mimiciii/processed/verifier/test.jsonl \
-  --summarizer-dir artifacts/summarizer/mistral_7b_qlora \
+  --summarizer-dir artifacts/summarizer/gemma3_12b_qlora \
   --verifier-dir artifacts/verifier/deberta_v3_large \
   --output-file artifacts/evaluation/pipeline/evaluation_report.json
 ```
@@ -237,6 +243,55 @@ The generated report includes:
 - verifier held-out metrics
 - correlation between overlap metrics and claim support
 - representative high-overlap / low-support examples
+
+## Human Annotation Workflow
+
+The publishable version of the project should include a manually reviewed claim-faithfulness subset.
+
+### 1. Export a claim annotation sheet
+
+If you already ran full pipeline evaluation:
+
+```bash
+python3 scripts/export_claim_annotations.py \
+  --pipeline-report artifacts/evaluation/pipeline/evaluation_report.json \
+  --output-csv artifacts/annotations/claim_annotations.csv \
+  --output-json artifacts/annotations/claim_annotation_export.json \
+  --limit 25
+```
+
+If you want to generate the annotation set directly from models:
+
+```bash
+python3 scripts/export_claim_annotations.py \
+  --input-file data/mimiciii/raw/test.jsonl \
+  --summarizer-dir artifacts/summarizer/gemma3_12b_qlora \
+  --verifier-dir artifacts/verifier/deberta_v3_large \
+  --output-csv artifacts/annotations/claim_annotations.csv \
+  --limit 25
+```
+
+### 2. Fill in the CSV
+
+Annotate `human_label` using one of:
+- `supported`
+- `contradiction`
+- `neutral`
+
+Optional adjudication notes can go into `human_notes`.
+
+### 3. Evaluate the annotated set
+
+```bash
+python3 scripts/evaluate_human_annotations.py \
+  --annotation-csv artifacts/annotations/claim_annotations.csv \
+  --output-file artifacts/evaluation/human_annotations/human_annotation_report.json
+```
+
+This report is the one that matters for the paper because it lets you compare:
+- verifier agreement with human claim judgments
+- ROUGE / BERTScore correlation with human claim support
+- examples where overlap looks strong but humans still find unsupported claims
 
 ## Local Mac + Colab Workflow
 
@@ -318,14 +373,14 @@ python3 scripts/prepare_datasets.py \
 
 python3 scripts/train_summarizer.py \
   --data-dir data/mimiciii/processed/summarization \
-  --config configs/summarizer/llama3_8b_qlora.json \
-  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
-  --output-dir artifacts/summarizer/mistral_7b_qlora_smoke
+  --config configs/summarizer/gemma3_12b_qlora.json \
+  --model-name google/gemma-3-12b-it \
+  --output-dir artifacts/summarizer/gemma3_12b_qlora_smoke
 
 python3 scripts/evaluate_summarizer.py \
   --input-file data/mimiciii/raw/test.jsonl \
-  --summarizer-dir artifacts/summarizer/mistral_7b_qlora_smoke \
-  --output-dir artifacts/evaluation/summarizer/mistral_7b_qlora_smoke_eval \
+  --summarizer-dir artifacts/summarizer/gemma3_12b_qlora_smoke \
+  --output-dir artifacts/evaluation/summarizer/gemma3_12b_qlora_smoke_eval \
   --limit 20
 ```
 
@@ -352,15 +407,15 @@ python3 scripts/ingest_mimiciii_notes.py --input-file data/mimiciii/NOTEEVENTS.c
 python3 scripts/prepare_datasets.py
 python3 scripts/train_summarizer.py \
   --data-dir data/mimiciii/processed/summarization \
-  --config configs/summarizer/llama3_8b_qlora.json \
-  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
-  --output-dir artifacts/summarizer/mistral_7b_qlora
+  --config configs/summarizer/gemma3_12b_qlora.json \
+  --model-name google/gemma-3-12b-it \
+  --output-dir artifacts/summarizer/gemma3_12b_qlora
 python3 scripts/evaluate_summarizer.py \
   --input-file data/mimiciii/raw/test.jsonl \
-  --summarizer-dir artifacts/summarizer/mistral_7b_qlora
+  --summarizer-dir artifacts/summarizer/gemma3_12b_qlora
 ```
 
-If you only want a repository-contained smoke artifact for wiring checks, use `artifacts/summarizer/mistral_7b_qlora_smoke` instead of `artifacts/summarizer/mistral_7b_qlora`. It is useful for tokenizer/config inspection and adapter-level regression checks, but it is not a full final model release.
+If you only want a repository-contained smoke artifact for wiring checks, use `artifacts/summarizer/mistral_7b_qlora_smoke` instead of the full Gemma output directory. It is useful for tokenizer/config inspection and adapter-level regression checks, but it is not a full final model release.
 
 ## Related Work Positioning
 
@@ -399,11 +454,11 @@ Some bundled configs still reference older seq2seq or verifier experiments, incl
 
 ## Limitations
 
-- verifier training is still blocked on missing claim labels
+- verifier training currently relies on weakly supervised claim labels generated during preprocessing
 - overlap metrics do not directly measure factual faithfulness
 - the summarizer still struggles with heterogeneous hospital-course target styles
 - some decoding settings can make outputs more generic or hallucination-prone
 - model downloads require internet access on first use
-- the recommended Mistral QLoRA path assumes CUDA
+- the recommended Gemma QLoRA path assumes CUDA
 
 Additional preset notes are in [configs/README.md](configs/README.md).

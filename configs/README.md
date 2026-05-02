@@ -5,15 +5,15 @@ These JSON presets can be passed to the main scripts with `--config`.
 All bundled presets assume official data lives under `data/mimiciii/...`.
 
 The presets in this directory are a mix of current and historical experiments:
-- `configs/summarizer/llama3_8b_qlora.json` is the current recommended summarizer preset and is typically paired with `mistralai/Mistral-7B-Instruct-v0.2`
+- `configs/summarizer/gemma3_12b_qlora.json` is the current recommended summarizer preset and is typically paired with `google/gemma-3-12b-it`
 - the `flan_t5_*` summarizer presets remain for seq2seq experiment history
-- verifier and full-pipeline presets remain future-facing because the current MIMIC ingestion path does not populate claim labels
+- verifier and full-pipeline presets remain available for the claim-verification pipeline
 
 Some historical presets still point at artifact paths that are not checked into the repository, such as `artifacts/summarizer/flan_t5_small`. Treat those as references for reproducing past runs, not as guaranteed local artifacts.
 
 ## Project-Relevant Use Of Presets
 
-For the course project, the presets are most useful for organizing a small number of controlled experiments:
+For the paper, the presets are most useful for organizing a small number of controlled experiments:
 
 1. baseline summarizer training
 2. narrative-only filtered-data training
@@ -36,14 +36,14 @@ python3 scripts/prepare_datasets.py \
   --output-dir data/mimiciii/processed
 ```
 
-Train the recommended Mistral QLoRA summarizer:
+Train the recommended Gemma QLoRA summarizer:
 
 ```bash
 python3 scripts/train_summarizer.py \
   --data-dir data/mimiciii/processed/summarization \
-  --config configs/summarizer/llama3_8b_qlora.json \
-  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
-  --output-dir artifacts/summarizer/mistral_7b_qlora \
+  --config configs/summarizer/gemma3_12b_qlora.json \
+  --model-name google/gemma-3-12b-it \
+  --output-dir artifacts/summarizer/gemma3_12b_qlora \
   --save-strategy steps \
   --save-steps 200 \
   --save-total-limit 2 \
@@ -57,7 +57,7 @@ Run summarizer-only evaluation:
 ```bash
 python3 scripts/evaluate_summarizer.py \
   --input-file data/mimiciii/raw/test.jsonl \
-  --summarizer-dir artifacts/summarizer/mistral_7b_qlora
+  --summarizer-dir artifacts/summarizer/gemma3_12b_qlora
 ```
 
 ## Current Best Follow-Up
@@ -82,9 +82,9 @@ Train on it:
 ```bash
 python3 scripts/train_summarizer.py \
   --data-dir data/mimiciii/processed_narrative/summarization \
-  --config configs/summarizer/llama3_8b_qlora.json \
-  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
-  --output-dir artifacts/summarizer/mistral_7b_qlora_narrative \
+  --config configs/summarizer/gemma3_12b_qlora.json \
+  --model-name google/gemma-3-12b-it \
+  --output-dir artifacts/summarizer/gemma3_12b_qlora_narrative \
   --save-strategy steps \
   --save-steps 200 \
   --save-total-limit 2 \
@@ -98,8 +98,8 @@ Evaluate it:
 ```bash
 python3 scripts/evaluate_summarizer.py \
   --input-file data/mimiciii/raw/test.jsonl \
-  --summarizer-dir artifacts/summarizer/mistral_7b_qlora_narrative \
-  --output-dir artifacts/evaluation/summarizer/mistral_7b_qlora_narrative_eval \
+  --summarizer-dir artifacts/summarizer/gemma3_12b_qlora_narrative \
+  --output-dir artifacts/evaluation/summarizer/gemma3_12b_qlora_narrative_eval \
   --limit 50
 ```
 
@@ -119,14 +119,14 @@ python3 scripts/prepare_datasets.py \
 
 python3 scripts/train_summarizer.py \
   --data-dir data/mimiciii/processed/summarization \
-  --config configs/summarizer/llama3_8b_qlora.json \
-  --model-name mistralai/Mistral-7B-Instruct-v0.2 \
-  --output-dir artifacts/summarizer/mistral_7b_qlora_smoke
+  --config configs/summarizer/gemma3_12b_qlora.json \
+  --model-name google/gemma-3-12b-it \
+  --output-dir artifacts/summarizer/gemma3_12b_qlora_smoke
 
 python3 scripts/evaluate_summarizer.py \
   --input-file data/mimiciii/raw/test.jsonl \
-  --summarizer-dir artifacts/summarizer/mistral_7b_qlora_smoke \
-  --output-dir artifacts/evaluation/summarizer/mistral_7b_qlora_smoke_eval \
+  --summarizer-dir artifacts/summarizer/gemma3_12b_qlora_smoke \
+  --output-dir artifacts/evaluation/summarizer/gemma3_12b_qlora_smoke_eval \
   --limit 20
 ```
 
@@ -141,7 +141,7 @@ python3 scripts/prepare_datasets.py \
   --target-sentence-limit 2
 ```
 
-Then train and evaluate with the same Mistral QLoRA command, pointing at a separate output directory if needed.
+Then train and evaluate with the same Gemma QLoRA command, pointing at a separate output directory if needed.
 
 ## Decoding Checks
 
@@ -159,8 +159,8 @@ The most report-worthy experiment lineup is:
 
 - historical or simple baseline
   - optional T5 experiment or simple extractive heuristic
-- full-data Mistral QLoRA baseline
-- `narrative-only` Mistral QLoRA model
+- full-data Gemma QLoRA baseline
+- `narrative-only` Gemma QLoRA model
 - decoding comparison as a small ablation or negative result
 
 This gives you:
@@ -172,8 +172,7 @@ This gives you:
 
 Some older summarizer configs and verifier/evaluation presets remain in the repository for experiment history and future work. They are not the primary documented workflow for the current project because:
 
-- the current MIMIC ingestion pipeline does not yet generate claim labels
-- verifier splits are therefore empty by design
+- verifier labels are weakly supervised rather than manually annotated
 - earlier seq2seq baselines are no longer the recommended path
 
 If you want a checked-in artifact to inspect alongside these presets, the repository currently includes `artifacts/summarizer/mistral_7b_qlora_smoke/`, which is a smoke-test PEFT adapter directory rather than a full merged model checkpoint.
