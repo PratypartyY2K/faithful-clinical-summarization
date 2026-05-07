@@ -83,12 +83,13 @@ class CausalDataCollator:
     def __call__(self, features: List[Dict[str, List[int]]]) -> Dict[str, torch.Tensor]:
         max_length = max(len(feature["input_ids"]) for feature in features)
         pad_token_id = self.tokenizer.pad_token_id
-        batch = {"input_ids": [], "attention_mask": [], "labels": []}
+        batch = {"input_ids": [], "attention_mask": [], "labels": [], "token_type_ids": []}
         for feature in features:
             pad_length = max_length - len(feature["input_ids"])
             batch["input_ids"].append(feature["input_ids"] + [pad_token_id] * pad_length)
             batch["attention_mask"].append(feature["attention_mask"] + [0] * pad_length)
             batch["labels"].append(feature["labels"] + [-100] * pad_length)
+            batch["token_type_ids"].append(feature["token_type_ids"] + [0] * pad_length)
         return {key: torch.tensor(value, dtype=torch.long) for key, value in batch.items()}
 
 
@@ -223,7 +224,7 @@ def build_causal_trainer(dataset, tokenizer, args: argparse.Namespace):
     model = configure_peft(model, args, TaskType.CAUSAL_LM)
 
     def preprocess(batch):
-        rows = {"input_ids": [], "attention_mask": [], "labels": []}
+        rows = {"input_ids": [], "attention_mask": [], "labels": [], "token_type_ids": []}
         for input_text, target_text in zip(batch["input_text"], batch["target_text"]):
             prompt = build_summary_prompt(str(input_text))
             prompt_ids = tokenizer(
@@ -243,6 +244,9 @@ def build_causal_trainer(dataset, tokenizer, args: argparse.Namespace):
             rows["input_ids"].append(input_ids)
             rows["attention_mask"].append([1] * len(input_ids))
             rows["labels"].append(labels)
+            # Gemma 3 requires token_type_ids during training. This pipeline is
+            # text-only, so a single segment id is sufficient for every token.
+            rows["token_type_ids"].append([0] * len(input_ids))
         return rows
 
     tokenized = dataset.map(preprocess, batched=True, remove_columns=dataset["train"].column_names)
